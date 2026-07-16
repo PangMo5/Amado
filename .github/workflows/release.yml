@@ -7,6 +7,12 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing v* tag to rebuild and publish"
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -14,7 +20,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ inputs.tag || github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -28,14 +34,24 @@ jobs:
 
       - name: Resolve version
         id: version
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           set -euo pipefail
-          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          case "$RELEASE_TAG" in
+            v*) ;;
+            *)
+              echo "::error::Release tag must start with v (received: $RELEASE_TAG)." >&2
+              exit 1
+              ;;
+          esac
+          TAG_VERSION="${RELEASE_TAG#v}"
           APP_VERSION="$(grep -E '^let appVersion' Project.swift | sed -E 's/.*"([^"]+)".*/\1/')"
           if [ "$TAG_VERSION" != "$APP_VERSION" ]; then
             echo "::error::Tag ($TAG_VERSION) does not match Project.swift appVersion ($APP_VERSION)." >&2
             exit 1
           fi
+          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
           echo "version=$TAG_VERSION" >> "$GITHUB_OUTPUT"
 
       - uses: jdx/mise-action@v4
@@ -113,6 +129,14 @@ jobs:
             "$RUNNER_TEMP/Amado-${{ steps.version.outputs.version }}.dmg" \
             "$RUNNER_TEMP/Amado.app"
 
+      - name: Sign DMG
+        run: |
+          set -euo pipefail
+          DMG="$RUNNER_TEMP/Amado-${{ steps.version.outputs.version }}.dmg"
+          codesign --force --timestamp \
+            --sign "Developer ID Application" "$DMG"
+          codesign --verify --strict --verbose=2 "$DMG"
+
       - name: Notarize and staple
         env:
           AC_API_KEY_ID: ${{ secrets.AC_API_KEY_ID }}
@@ -138,6 +162,8 @@ jobs:
             exit 1
           fi
           xcrun stapler staple "$DMG"
+          xcrun stapler validate "$DMG"
+          spctl -a -vv -t open --context context:primary-signature "$DMG"
 
       - name: Sign for Sparkle and build appcast
         env:
@@ -150,7 +176,7 @@ jobs:
           echo "$SPARKLE_PRIVATE_ED_KEY" > "$RUNNER_TEMP/sparkle_ed_private.key"
           "$SPARKLE_BIN/generate_appcast" \
             --ed-key-file "$RUNNER_TEMP/sparkle_ed_private.key" \
-            --download-url-prefix "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/" \
+            --download-url-prefix "https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag }}/" \
             "$RUNNER_TEMP/release"
 
       - name: Embed release notes in appcast
@@ -217,7 +243,7 @@ jobs:
       - name: Build release notes from changelog
         env:
           VERSION: ${{ steps.version.outputs.version }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ steps.version.outputs.tag }}
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
@@ -238,9 +264,9 @@ jobs:
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
         run: |
           set -euo pipefail
-          TAG="${{ github.ref_name }}"
           DMG="$RUNNER_TEMP/Amado-${{ steps.version.outputs.version }}.dmg"
           APPCAST="$RUNNER_TEMP/release/appcast.xml"
           if gh release view "$TAG" >/dev/null 2>&1; then
