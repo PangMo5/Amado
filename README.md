@@ -52,7 +52,7 @@ brew install --cask PangMo5/tap/amado
 Or download it from [GitHub Releases](https://github.com/PangMo5/Amado/releases).
 Sparkle checks for updates in the background, and **Check for Updates…** is
 available from the menu-bar item. The iPhone, widget, and Watch clients
-currently build from source with the same signing team.
+currently build from source.
 
 1. Launch Amado on the Mac and enable **Launch at Login** if wanted.
 2. Open **Settings › Pairing › Reveal pairing code**.
@@ -77,38 +77,23 @@ See the complete [`config.toml` reference](docs/CONFIGURATION.md),
 [pairing guide](docs/PAIRING.md), [remote access guide](docs/REMOTE_ACCESS.md),
 and [proximity auto-lock guide](docs/PROXIMITY_AUTO_LOCK.md).
 
-## Development
+## Build from source
 
 ```sh
-mise install        # install pinned Tuist and SwiftFormat versions
-make bootstrap      # install dependencies and generate Amado.xcworkspace
-make build          # build the macOS agent
-make build-ios      # build the iPhone app, widget, and Watch app
-make run            # build and launch the distinct Amado Dev app
-make test           # run AmadoKit tests on macOS
-make format         # format and lint Swift sources
+export TUIST_DEVELOPMENT_TEAM=YOUR_TEAM_ID
+mise install
+make bootstrap
+open Amado.xcworkspace
 ```
 
-Set your signing team in the git-ignored `.mise.local.toml`:
+## Tech stack
 
-```toml
-[env]
-TUIST_DEVELOPMENT_TEAM = "YOUR_TEAM_ID"
-```
-
-### Targets
-
-| Target | Product | Platform |
-| --- | --- | --- |
-| `Amado` | Menu-bar app | macOS 15+ |
-| `AmadoiOS` | App | iOS 18+ |
-| `AmadoWatch` | Companion app | watchOS 11+ |
-| `AmadoWidget` | Widget and Control extension | iOS 18+ |
-| `AmadoKit` | Shared framework | macOS, iOS, watchOS |
-| `AmadoTests` | Swift Testing suite | macOS |
-
-Amado uses Tuist, The Composable Architecture, Sharing, Hummingbird, Sparkle,
-WidgetKit, App Intents, Swift Testing, and strict Swift 6 concurrency.
+- Tuist-generated Xcode workspace
+- The Composable Architecture and Sharing
+- Hummingbird for the loopback HTTP endpoint
+- Sparkle for macOS updates
+- WidgetKit, App Intents, and WatchConnectivity
+- Swift Testing and strict Swift 6 concurrency
 
 ## License
 
