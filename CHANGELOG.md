@@ -5,9 +5,6 @@ versioning, and the newest release appears first.
 
 ## 0.1.0 (2026-07-16)
 
-- Initial public release of the macOS menu-bar agent and iPhone, Watch, widget,
-  and Control Center clients.
-- Added authenticated QR pairing, Bonjour LAN delivery, and optional HTTPS
-  tunnel fallback.
-- Added Bluetooth proximity auto-lock with configurable threshold, grace, and
-  smoothing.
+- **One-tap lock:** Lock from iPhone, Apple Watch, a Home Screen widget, or Control Center.
+- **Walk-away auto-lock:** Bluetooth proximity locks your Mac automatically, with tunable threshold, grace, and smoothing.
+- **Secure delivery:** Pair by QR, connect directly over Bonjour, and optionally use your own HTTPS tunnel.
