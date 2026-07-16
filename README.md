@@ -1,21 +1,14 @@
-<p align="center">
-  <img src="Amado/Resources/Assets.xcassets/AppIcon.appiconset/icon_256.png" width="128" alt="Amado app icon" />
-</p>
+# Amado <img src="Amado/Resources/Assets.xcassets/AppIcon.appiconset/icon_256.png" align="right" height="128" />
 
-<h1 align="center">Amado</h1>
+[![Latest release](https://img.shields.io/github/v/release/PangMo5/Amado?sort=semver)](https://github.com/PangMo5/Amado/releases/latest)
+[![Download](https://img.shields.io/github/downloads/PangMo5/Amado/total)](https://github.com/PangMo5/Amado/releases)
+![Swift 6](https://img.shields.io/badge/Swift-6.0-orange.svg)
+![macOS 15+](https://img.shields.io/badge/macOS-15%2B-blue)
+![iOS 18+](https://img.shields.io/badge/iOS-18%2B-blue)
+![watchOS 11+](https://img.shields.io/badge/watchOS-11%2B-blue)
+[![License: MPL-2.0](https://img.shields.io/badge/License-MPL%202.0-brightgreen)](LICENSE)
 
-<p align="center">
-  Lock your Mac from iPhone, Apple Watch, a widget, or Control Center.
-</p>
-
-<p align="center">
-  <a href="https://github.com/PangMo5/Amado/releases"><img src="https://img.shields.io/github/v/release/PangMo5/Amado?display_name=tag&include_prereleases&sort=semver" alt="GitHub release" /></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MPL--2.0-blue.svg" alt="MPL-2.0 license" /></a>
-  <img src="https://img.shields.io/badge/Swift-6.0-orange.svg" alt="Swift 6" />
-  <img src="https://img.shields.io/badge/macOS-15%2B-black.svg" alt="macOS 15 or later" />
-  <img src="https://img.shields.io/badge/iOS-18%2B-black.svg" alt="iOS 18 or later" />
-  <img src="https://img.shields.io/badge/watchOS-11%2B-black.svg" alt="watchOS 11 or later" />
-</p>
+Lock your Mac from iPhone, Apple Watch, a widget, or Control Center.
 
 *Amado* (雨戸) are the sliding shutters that close a Japanese house. One tap
 closes your Mac the same way: the menu-bar agent immediately returns it to the
