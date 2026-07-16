@@ -1,8 +1,12 @@
 # Proximity Auto-lock
 
-Proximity locking is performed by the Mac; the Amado iPhone app does not need
-to be open. Sign the Mac and iPhone into the same iCloud account so macOS can
-recognize the iPhone across its rotating Bluetooth identifier.
+One tap—or just walk away. Proximity auto-lock is one of Amado's two primary
+ways to lock: the Mac watches for your iPhone to leave and closes up without a
+button press.
+
+Proximity locking is performed by the Mac, so the Amado iPhone app does not
+need to be open. Sign the Mac and iPhone into the same iCloud account so macOS
+can recognize the iPhone across its rotating Bluetooth identifier.
 
 ## Set up and calibrate
 

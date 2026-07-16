@@ -49,12 +49,13 @@ jobs:
           BUST="${GITHUB_SHA:0:8}"
           sed -i "s#\"./style.css\"#\"./style.css?v=${BUST}\"#g" "$SITE"/*.html
 
-          # A Pages deploy replaces the whole site. Preserve Sparkle's feed once
-          # a release exists. Before the first release there is no feed to keep;
-          # after that, fail rather than silently break in-app updates.
+          # A Pages deploy replaces the whole site. Always take Sparkle's feed
+          # from the latest GitHub Release so a first release does not depend on
+          # an appcast already existing on the website.
           if [ -n "$VERSION" ]; then
-            curl -fsSL "https://pangmo5.dev/Amado/appcast.xml" -o "$SITE/appcast.xml"
-            echo "Bundled existing appcast.xml ($(wc -c < "$SITE/appcast.xml") bytes)"
+            gh release download "v${VERSION}" --repo "$REPO" \
+              --pattern appcast.xml --dir "$SITE"
+            echo "Bundled release appcast.xml ($(wc -c < "$SITE/appcast.xml") bytes)"
           else
             echo "No release yet; appcast.xml is not expected"
           fi

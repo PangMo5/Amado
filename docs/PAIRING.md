@@ -2,6 +2,8 @@
 
 Pairing transfers an authenticated lock capability from the Mac to the iPhone.
 The Apple Watch, widget, and Control Center use the iPhone's paired-Mac data.
+This powers Amado's one-tap path; walk-away auto-lock is configured separately
+on the Mac, and both paths trigger the same lock-only action.
 
 ## Pair an iPhone
 

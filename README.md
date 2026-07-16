@@ -8,22 +8,22 @@
 ![watchOS 11+](https://img.shields.io/badge/watchOS-11%2B-blue)
 [![License: MPL-2.0](https://img.shields.io/badge/License-MPL%202.0-brightgreen)](LICENSE)
 
-Lock your Mac from iPhone, Apple Watch, a widget, or Control Center.
+Lock your Mac with one tap—or just walk away.
 
 *Amado* (雨戸) are the sliding shutters that close a Japanese house. One tap
-closes your Mac the same way: the menu-bar agent immediately returns it to the
-login window.
+closes your Mac the same way. Walk away with your iPhone and Amado can close it
+automatically.
 
 ## Features
 
-- **Everywhere you need it** — lock from the iPhone app, Apple Watch, a Home
+- **One tap, everywhere** — lock from the iPhone app, Apple Watch, a Home
   Screen widget, or Control Center.
+- **Automatic when you leave** — Bluetooth proximity lets the Mac lock itself
+  when you walk away with your iPhone.
 - **Fast on your LAN** — Bonjour discovery and a direct authenticated command,
   with no account or hosted service.
 - **Remote when you choose** — bring your own HTTPS tunnel; Amado never proxies
   commands through a service operated by this project.
-- **Walk-away auto-lock** — the Mac can use your nearby iPhone's Bluetooth
-  signal as a proximity trigger.
 - **Authenticated pairing** — QR pairing provisions a 256-bit secret used for
   HMAC-SHA256 authentication, timestamp checks, and replay protection.
 
@@ -33,11 +33,13 @@ login window.
 Apple Watch ── WatchConnectivity ──▶ iPhone ─┬─ Bonjour + TCP ───────▶ Mac
 Widget / Control Center / iPhone app ────────┤
                                              └─ HTTPS tunnel ───────▶ Mac
+Nearby iPhone ───────── Bluetooth proximity ────────────────────────▶ Mac
 ```
 
 The iPhone client tries the local network first and uses the paired Mac's
 optional tunnel only when LAN delivery is unavailable. The tunnel forwards to a
-loopback-only HTTP listener on `127.0.0.1:51521`.
+loopback-only HTTP listener on `127.0.0.1:51521`. Use a control when you want an
+immediate lock; enable proximity auto-lock when walking away should be enough.
 
 See [Security](docs/SECURITY.md) for the trust model and protocol boundaries.
 
@@ -58,6 +60,7 @@ currently build from source.
 2. Open **Settings › Pairing › Reveal pairing code**.
 3. In the iPhone app, scan the QR code.
 4. Use the app, widget, Control Center control, or Watch app to lock the Mac.
+5. Optionally enable **Auto-lock** so leaving with the iPhone locks it for you.
 
 ## Configuration
 

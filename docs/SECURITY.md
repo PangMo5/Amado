@@ -4,6 +4,10 @@ Amado is designed around a narrow capability: a paired client may lock a Mac.
 It does not expose unlock, login, shell execution, or general remote-control
 capabilities.
 
+Amado reaches that capability in two ways: authenticated one-tap commands from
+your Apple devices, and local Bluetooth proximity auto-lock when you leave.
+Both paths can only lock.
+
 ## Trust model
 
 - Pairing creates a random 256-bit secret on the Mac and transfers it through a
@@ -16,6 +20,8 @@ capabilities.
 - LAN commands use Bonjour discovery and a direct TCP connection.
 - Remote commands use HTTPS through a tunnel operated by the user. The local
   HTTP listener binds only to `127.0.0.1:51521`.
+- Proximity auto-lock runs on the Mac and observes the selected iPhone's
+  Bluetooth signal; it does not expose another network command endpoint.
 
 ## Security boundaries
 

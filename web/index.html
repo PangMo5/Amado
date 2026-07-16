@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Amado — Lock your Mac from anywhere</title>
-<meta name="description" content="Lock your Mac from iPhone, Apple Watch, a widget, or Control Center — instantly on your LAN or through a tunnel you operate." />
+<title>Amado — One tap, or just walk away</title>
+<meta name="description" content="Lock your Mac with one tap from iPhone or Apple Watch, or automatically when you walk away." />
 <meta name="theme-color" content="#0b0b0f" />
 <link rel="icon" type="image/png" href="./icon.png" />
 <link rel="stylesheet" href="./style.css" />
 <meta property="og:title" content="Amado" />
-<meta property="og:description" content="Lock your Mac from anywhere." />
+<meta property="og:description" content="One tap—or just walk away." />
 <meta property="og:image" content="./icon.png" />
 <meta property="og:type" content="website" />
 </head>
@@ -22,8 +22,8 @@
     <label for="nav-toggle" class="nav-burger" aria-label="Menu"><span></span></label>
     <div class="nav-links">
       <a href="#controls">Controls</a>
-      <a href="#network">Network</a>
       <a href="#proximity">Auto-lock</a>
+      <a href="#network">Network</a>
       <a href="#security">Security</a>
       <a href="./configuration.html">Configuration</a>
       <a href="./releases.html">Releases</a>
@@ -37,7 +37,7 @@
   <div class="wrap">
     <img class="hero-icon" src="./icon.png" alt="Amado app icon" />
     <h1>Amado</h1>
-    <p class="sub">Close the shutters.<br />Lock your Mac from iPhone or Apple Watch, nearby or anywhere.</p>
+    <p class="sub">One tap—or just walk away.<br />Lock on demand from your Apple devices, or automatically when you leave.</p>
     <div class="cta">
       <a class="btn btn-primary download-link" href="https://github.com/PangMo5/Amado/releases">Download for macOS</a>
       <a class="btn btn-link" href="https://github.com/PangMo5/Amado">View on GitHub&nbsp;&rsaquo;</a>
@@ -59,13 +59,13 @@
     <div class="device mac-device"><span class="device-icon">💻</span><strong>Mac</strong><small>Locked</small></div>
     <div class="lock-pulse" aria-hidden="true">🔒</div>
   </div>
-  <p class="scene-caption">The local network first. Your tunnel only when needed.</p>
+  <p class="scene-caption">One tap when you want it. Automatic when you leave.</p>
 </section>
 
 <section id="controls" class="section-gray">
   <div class="wrap">
-    <p class="eyebrow">One action, everywhere</p>
-    <h2>Lock from wherever your hand already is.</h2>
+    <p class="eyebrow">One tap, everywhere</p>
+    <h2>Lock the moment you ask.</h2>
     <p class="sub">The same paired Macs are available across the iPhone app, Home Screen, Control Center, and Apple Watch.</p>
     <div class="features">
       <div class="feature"><div class="ico">📱</div><h3>iPhone app</h3><p>Pair by scanning the QR code on your Mac, then lock any saved Mac with one tap.</p></div>
@@ -75,7 +75,20 @@
   </div>
 </section>
 
-<section id="network">
+<section id="proximity">
+  <div class="wrap">
+    <p class="eyebrow">No tap required</p>
+    <h2>Walk away. Your Mac closes up.</h2>
+    <p class="sub">Bluetooth proximity is a primary Amado experience: the Mac watches for your iPhone to leave and locks without a button press.</p>
+    <div class="features">
+      <div class="feature"><div class="ico">🚶</div><h3>No phone app needed</h3><p>Proximity sensing runs on the Mac; the Amado iPhone app does not need to remain open.</p></div>
+      <div class="feature"><div class="ico">📶</div><h3>Tunable for your room</h3><p>Choose the RSSI threshold, grace period, and smoothing that fit your desk and environment.</p></div>
+      <div class="feature"><div class="ico">☁️</div><h3>Stable identity</h3><p>Use the same iCloud account on Mac and iPhone so macOS can recognize the phone across Bluetooth address rotation.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="network" class="section-gray">
   <div class="wrap">
     <p class="eyebrow">Local first</p>
     <h2>Fast nearby. Reachable away.</h2>
@@ -84,19 +97,6 @@
       <div class="feature"><div class="ico">⚡️</div><h3>Direct on LAN</h3><p>No cloud hop, account, or hosted Amado service. A valid command goes straight to the Mac agent.</p></div>
       <div class="feature"><div class="ico">🌐</div><h3>Bring your own tunnel</h3><p>Use Cloudflare Tunnel, Tailscale Funnel, ngrok, or another HTTPS tunnel with a stable hostname.</p></div>
       <div class="feature"><div class="ico">↩️</div><h3>Clear fallback</h3><p>The client tries LAN first, then remote. With neither available it reports the failure instead of silently queuing.</p></div>
-    </div>
-  </div>
-</section>
-
-<section id="proximity" class="section-gray">
-  <div class="wrap">
-    <p class="eyebrow">Walk-away auto-lock</p>
-    <h2>Leave. Your Mac closes up.</h2>
-    <p class="sub">The Mac watches the selected iPhone's Bluetooth signal and locks after it stays beyond your calibrated threshold.</p>
-    <div class="features">
-      <div class="feature"><div class="ico">🚶</div><h3>No phone app needed</h3><p>Proximity sensing runs on the Mac; the Amado iPhone app does not need to remain open.</p></div>
-      <div class="feature"><div class="ico">📶</div><h3>Tunable for your room</h3><p>Choose the RSSI threshold, grace period, and smoothing that fit your desk and environment.</p></div>
-      <div class="feature"><div class="ico">☁️</div><h3>Stable identity</h3><p>Use the same iCloud account on Mac and iPhone so macOS can recognize the phone across Bluetooth address rotation.</p></div>
     </div>
   </div>
 </section>
@@ -118,7 +118,7 @@
 <section class="section-dark" id="download">
   <div class="wrap">
     <h2>Get Amado.</h2>
-    <p class="sub">Free, open source, and built for your Apple devices.</p>
+    <p class="sub">One tap when you want it. Automatic when you leave.</p>
     <div class="cta">
       <a class="btn btn-primary download-link" href="https://github.com/PangMo5/Amado/releases">Download for macOS</a>
       <a class="btn btn-link" href="./configuration.html">Set it up&nbsp;&rsaquo;</a>

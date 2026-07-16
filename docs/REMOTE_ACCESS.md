@@ -5,6 +5,9 @@ HTTPS tunnel that maps a public hostname to that loopback port. Amado always
 tries direct LAN delivery first and falls back to the tunnel only when the Mac
 cannot be reached locally.
 
+This extends Amado's one-tap controls beyond the LAN. Walk-away auto-lock is a
+separate, equally central path that runs locally on the Mac.
+
 Enter only the hostname in **Amado › Settings › Remote access**, then choose
 **Test connection**. The matching `config.toml` key is documented in the
 [configuration reference](CONFIGURATION.md).
