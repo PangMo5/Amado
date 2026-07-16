@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Release Notes — Amado</title>
+<title>Release Notes: Amado</title>
 <meta name="description" content="Amado release notes and version history." />
 <meta name="theme-color" content="#0b0b0f" />
 <link rel="icon" type="image/png" href="./icon.png" />
@@ -42,7 +42,7 @@
       <a href="https://github.com/PangMo5/Amado/blob/main/LICENSE">License</a>
     </div>
     <p>Rendered from <code>CHANGELOG.md</code> on <code>main</code>, the single source of truth. Not affiliated with Apple Inc.</p>
-    <p class="footer-apps">Apps by <a href="https://pangmo5.dev/">PangMo5</a> — <a href="https://pangmo5.dev/SwiftyCrow/">SwiftyCrow</a> · <a href="https://pangmo5.dev/Tatami/">Tatami</a> · <span class="cur" aria-current="page">Amado</span></p>
+    <p class="footer-apps">Apps by <a href="https://pangmo5.dev/">PangMo5</a>: <a href="https://pangmo5.dev/SwiftyCrow/">SwiftyCrow</a> · <a href="https://pangmo5.dev/Tatami/">Tatami</a> · <span class="cur" aria-current="page">Amado</span></p>
   </div>
 </footer>
 
@@ -97,7 +97,7 @@
     if (!entries.length) return fail();
     list.innerHTML = "";
     entries.forEach((entry) => {
-      const match = entry.heading.match(/^(.+?)\s+[—–-]\s+(.+)$/);
+      const match = entry.heading.match(/^(.+?)\s+\((\d{4}-\d{2}-\d{2})\)$/);
       const version = (match ? match[1] : entry.heading).trim();
       const date = match ? formatDate(match[2].trim()) : "";
       const tag = "v" + version.replace(/^v/, "");

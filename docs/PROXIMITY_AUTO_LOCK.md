@@ -1,6 +1,6 @@
 # Proximity Auto-lock
 
-One tap—or just walk away. Proximity auto-lock is one of Amado's two primary
+One tap, or just walk away. Proximity auto-lock is one of Amado's two primary
 ways to lock: the Mac watches for your iPhone to leave and closes up without a
 button press.
 
@@ -18,7 +18,7 @@ can recognize the iPhone across its rotating Bluetooth identifier.
 5. Walk away and tune the threshold, delay, and smoothing for the room.
 
 Lower thresholds require the signal to become weaker before locking. Fewer
-samples react faster but are noisier; more samples are steadier but slower. A
+samples react faster but are noisier. More samples are steadier but slower. A
 grace period prevents a brief Bluetooth dip from locking the Mac.
 
 The underlying `proximity_*` keys are documented in the
@@ -29,5 +29,5 @@ The underlying `proximity_*` keys are documented in the
 - Recalibrate in the room where the Mac is normally used.
 - Move `proximity_far_rssi` toward `-90` to require a weaker signal, or toward
   `-40` to lock sooner.
-- Increase grace or smoothing for unstable readings; reduce them for a faster
+- Increase grace or smoothing for unstable readings. Reduce them for a faster
   response.

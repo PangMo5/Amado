@@ -21,7 +21,7 @@ Both paths can only lock.
 - Remote commands use HTTPS through a tunnel operated by the user. The local
   HTTP listener binds only to `127.0.0.1:51521`.
 - Proximity auto-lock runs on the Mac and observes the selected iPhone's
-  Bluetooth signal; it does not expose another network command endpoint.
+  Bluetooth signal. It does not expose another network command endpoint.
 
 ## Security boundaries
 

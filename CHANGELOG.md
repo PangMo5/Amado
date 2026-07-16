@@ -3,7 +3,7 @@
 Notable changes to Amado are documented here. Versions follow semantic
 versioning, and the newest release appears first.
 
-## 0.1.0 — 2026-07-16
+## 0.1.0 (2026-07-16)
 
 - Initial public release of the macOS menu-bar agent and iPhone, Watch, widget,
   and Control Center clients.

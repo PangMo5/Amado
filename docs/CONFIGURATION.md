@@ -33,7 +33,7 @@ proximity_smoothing = 3
 remote_host = ""
 ```
 
-Every key is optional. A missing key uses its default; a present key with the
+Every key is optional. A missing key uses its default. A present key with the
 wrong TOML type is rejected instead of silently replacing the last valid
 configuration.
 

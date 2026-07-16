@@ -2,7 +2,7 @@
 
 Pairing transfers an authenticated lock capability from the Mac to the iPhone.
 The Apple Watch, widget, and Control Center use the iPhone's paired-Mac data.
-This powers Amado's one-tap path; walk-away auto-lock is configured separately
+This powers Amado's one-tap path. Walk-away auto-lock is configured separately
 on the Mac, and both paths trigger the same lock-only action.
 
 ## Pair an iPhone
@@ -21,7 +21,7 @@ If you change `remote_host`, pair again so the iPhone receives the new hostname.
 ## Replace the pairing secret
 
 **Regenerate pairing secret** immediately invalidates every existing client.
-Pair the iPhone again after regeneration; its Watch, widget, and Control Center
+Pair the iPhone again after regeneration. Its Watch, widget, and Control Center
 data will then use the new secret.
 
 See [Security](SECURITY.md) for the trust model, command authentication, and

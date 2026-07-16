@@ -1,6 +1,6 @@
 # Remote Access
 
-Remote access is optional. Amado listens on `127.0.0.1:51521`; you operate an
+Remote access is optional. Amado listens on `127.0.0.1:51521`. You operate an
 HTTPS tunnel that maps a public hostname to that loopback port. Amado always
 tries direct LAN delivery first and falls back to the tunnel only when the Mac
 cannot be reached locally.
