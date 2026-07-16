@@ -73,8 +73,9 @@ reloaded when the file changes. Pairing secrets stay in Keychain.
 | `proximity_grace_seconds` | `2` | Time beyond the threshold before locking |
 | `proximity_smoothing` | `3` | Number of RSSI samples to average |
 
-The complete schema, proximity tuning, and Cloudflare Tunnel, Tailscale Funnel,
-and ngrok recipes are in [Configuration](docs/CONFIGURATION.md).
+See the complete [`config.toml` reference](docs/CONFIGURATION.md),
+[pairing guide](docs/PAIRING.md), [remote access guide](docs/REMOTE_ACCESS.md),
+and [proximity auto-lock guide](docs/PROXIMITY_AUTO_LOCK.md).
 
 ## Development
 
@@ -94,8 +95,6 @@ Set your signing team in the git-ignored `.mise.local.toml`:
 [env]
 TUIST_DEVELOPMENT_TEAM = "YOUR_TEAM_ID"
 ```
-
-Tagged, signed releases are documented in [Releasing](docs/RELEASING.md).
 
 ### Targets
 
