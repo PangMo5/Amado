@@ -1,0 +1,51 @@
+# Tuist-generated artifacts
+*.xcodeproj/
+*.xcworkspace/
+.tuist/
+Derived/
+graph.dot
+graph.png
+
+# Xcode user state
+xcuserdata/
+*.hmap
+DerivedData/
+
+# SwiftPM build cache (under Tuist/)
+.build/
+.swiftpm/
+
+# sourcekit-lsp / build server
+buildServer.json
+
+# Generated Info.plist
+**/Info.plist
+
+# App packaging
+*.ipa
+*.dSYM.zip
+*.dSYM
+.dsyms/
+
+# Local mise overrides (development team, secrets)
+.mise.local.toml
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Editors
+.vscode/
+.idea/
+.nvim/
+.cursor/
+
+# Secrets / signing material
+*.p8
+*.p12
+*.mobileprovision
+*.cer
+*.pem
+*.certSigningRequest

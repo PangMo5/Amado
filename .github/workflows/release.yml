@@ -1,0 +1,338 @@
+name: Release
+
+# Push a tag such as v0.1.0 to build, sign, notarize, and publish the macOS
+# agent. The workflow also signs the archive for Sparkle and deploys the site
+# with the new appcast.xml.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: macos-26
+    env:
+      TUIST_DEVELOPMENT_TEAM: ${{ secrets.DEVELOPMENT_TEAM }}
+      TUIST_SPARKLE_PUBLIC_ED_KEY: ${{ secrets.SPARKLE_PUBLIC_ED_KEY }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Resolve version
+        id: version
+        run: |
+          set -euo pipefail
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          APP_VERSION="$(grep -E '^let appVersion' Project.swift | sed -E 's/.*"([^"]+)".*/\1/')"
+          if [ "$TAG_VERSION" != "$APP_VERSION" ]; then
+            echo "::error::Tag ($TAG_VERSION) does not match Project.swift appVersion ($APP_VERSION)." >&2
+            exit 1
+          fi
+          echo "version=$TAG_VERSION" >> "$GITHUB_OUTPUT"
+
+      - uses: jdx/mise-action@v4
+
+      - name: Import Developer ID certificate
+        env:
+          CERT_P12_BASE64: ${{ secrets.DEVELOPER_ID_P12_BASE64 }}
+          CERT_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN="$RUNNER_TEMP/build.keychain-db"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          echo "$CERT_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$CERT_PASSWORD" \
+            -T /usr/bin/codesign -T /usr/bin/productsign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+
+      - name: Generate Xcode project
+        env:
+          TUIST_BUILD_NUMBER: ${{ github.run_number }}
+        run: |
+          tuist install
+          tuist generate --no-open
+
+      - name: Archive macOS agent
+        run: |
+          set -euo pipefail
+          xcodebuild archive \
+            -workspace Amado.xcworkspace \
+            -scheme Amado \
+            -configuration Release \
+            -destination 'generic/platform=macOS' \
+            -archivePath "$RUNNER_TEMP/Amado.xcarchive" \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="Developer ID Application" \
+            DEVELOPMENT_TEAM="$TUIST_DEVELOPMENT_TEAM" \
+            ENABLE_HARDENED_RUNTIME=YES \
+            OTHER_CODE_SIGN_FLAGS="--timestamp --options=runtime"
+
+      - name: Export app
+        run: |
+          set -euo pipefail
+          cp -R "$RUNNER_TEMP/Amado.xcarchive/Products/Applications/Amado.app" "$RUNNER_TEMP/Amado.app"
+
+      - name: Re-sign Sparkle nested helpers
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/Amado.app"
+          SPARKLE="$APP/Contents/Frameworks/Sparkle.framework"
+          sign() {
+            codesign --force --options runtime --timestamp \
+              --preserve-metadata=entitlements \
+              --sign "Developer ID Application" "$1"
+          }
+          sign "$SPARKLE/Versions/Current/XPCServices/Installer.xpc"
+          sign "$SPARKLE/Versions/Current/XPCServices/Downloader.xpc"
+          sign "$SPARKLE/Versions/Current/Autoupdate"
+          sign "$SPARKLE/Versions/Current/Updater.app"
+          sign "$SPARKLE"
+          sign "$APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+
+      - name: Create DMG
+        run: |
+          set -euo pipefail
+          brew install create-dmg
+          create-dmg \
+            --volname "Amado" \
+            --app-drop-link 420 180 \
+            --window-size 600 360 \
+            "$RUNNER_TEMP/Amado-${{ steps.version.outputs.version }}.dmg" \
+            "$RUNNER_TEMP/Amado.app"
+
+      - name: Notarize and staple
+        env:
+          AC_API_KEY_ID: ${{ secrets.AC_API_KEY_ID }}
+          AC_API_ISSUER_ID: ${{ secrets.AC_API_ISSUER_ID }}
+          AC_API_KEY_P8: ${{ secrets.AC_API_KEY_P8 }}
+        run: |
+          set -euo pipefail
+          echo "$AC_API_KEY_P8" > "$RUNNER_TEMP/ac_api_key.p8"
+          DMG="$RUNNER_TEMP/Amado-${{ steps.version.outputs.version }}.dmg"
+          SUBMIT_JSON="$(xcrun notarytool submit "$DMG" \
+            --key "$RUNNER_TEMP/ac_api_key.p8" \
+            --key-id "$AC_API_KEY_ID" \
+            --issuer "$AC_API_ISSUER_ID" \
+            --output-format json --wait)"
+          echo "$SUBMIT_JSON"
+          SUB_ID="$(echo "$SUBMIT_JSON" | python3 -c 'import sys, json; print(json.load(sys.stdin)["id"])')"
+          SUB_STATUS="$(echo "$SUBMIT_JSON" | python3 -c 'import sys, json; print(json.load(sys.stdin)["status"])')"
+          if [ "$SUB_STATUS" != "Accepted" ]; then
+            xcrun notarytool log "$SUB_ID" \
+              --key "$RUNNER_TEMP/ac_api_key.p8" \
+              --key-id "$AC_API_KEY_ID" \
+              --issuer "$AC_API_ISSUER_ID" || true
+            exit 1
+          fi
+          xcrun stapler staple "$DMG"
+
+      - name: Sign for Sparkle and build appcast
+        env:
+          SPARKLE_PRIVATE_ED_KEY: ${{ secrets.SPARKLE_PRIVATE_ED_KEY }}
+        run: |
+          set -euo pipefail
+          SPARKLE_BIN="$(find Tuist/.build -path '*/Sparkle/bin' -type d | head -1)"
+          mkdir -p "$RUNNER_TEMP/release"
+          cp "$RUNNER_TEMP/Amado-${{ steps.version.outputs.version }}.dmg" "$RUNNER_TEMP/release/"
+          echo "$SPARKLE_PRIVATE_ED_KEY" > "$RUNNER_TEMP/sparkle_ed_private.key"
+          "$SPARKLE_BIN/generate_appcast" \
+            --ed-key-file "$RUNNER_TEMP/sparkle_ed_private.key" \
+            --download-url-prefix "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/" \
+            "$RUNNER_TEMP/release"
+
+      - name: Embed release notes in appcast
+        env:
+          APPCAST: ${{ runner.temp }}/release/appcast.xml
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          import html
+          import os
+          import re
+
+          version = os.environ["VERSION"]
+          lines = open("CHANGELOG.md", encoding="utf-8").read().splitlines()
+          body = []
+          collecting = False
+          for line in lines:
+              if line.startswith(f"## {version} "):
+                  collecting = True
+                  continue
+              if collecting and line.startswith("## "):
+                  break
+              if collecting:
+                  body.append(line)
+
+          def inline(value):
+              value = html.escape(value)
+              value = re.sub(r"`([^`]+)`", r"<code>\1</code>", value)
+              value = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", value)
+              value = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r'<a href="\2">\1</a>', value)
+              return value
+
+          output = [f"<h2>Amado {html.escape(version)}</h2>"]
+          in_list = False
+          for line in body:
+              if line.startswith("### "):
+                  if in_list:
+                      output.append("</ul>")
+                      in_list = False
+                  output.append("<h3>" + inline(line[4:].strip()) + "</h3>")
+              elif line.startswith("- "):
+                  if not in_list:
+                      output.append("<ul>")
+                      in_list = True
+                  output.append("<li>" + inline(line[2:].strip()) + "</li>")
+              elif line.strip():
+                  if in_list:
+                      output.append("</ul>")
+                      in_list = False
+                  output.append("<p>" + inline(line.strip()) + "</p>")
+          if in_list:
+              output.append("</ul>")
+
+          appcast = os.environ["APPCAST"]
+          xml = open(appcast, encoding="utf-8").read()
+          notes = "\n".join(output)
+          if body and "<description>" not in xml:
+              description = "<description><![CDATA[\n" + notes + "\n]]></description>\n    "
+              xml = xml.replace("</item>", description + "</item>", 1)
+              open(appcast, "w", encoding="utf-8").write(xml)
+          PY
+
+      - name: Build release notes from changelog
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          NOTES="$RUNNER_TEMP/release-notes.md"
+          awk -v h="## ${VERSION} " 'index($0, h) == 1 { g = 1; next } g && /^## / { exit } g { print }' \
+            CHANGELOG.md | sed 's/^### /## /' > "$NOTES"
+          if [ ! -s "$NOTES" ]; then
+            echo "See the [changelog](https://github.com/${REPO}/blob/main/CHANGELOG.md)." > "$NOTES"
+          fi
+          {
+            echo ""
+            echo "## Install / Update"
+            echo ""
+            echo "- Direct: [Amado-${VERSION}.dmg](https://github.com/${REPO}/releases/download/${TAG}/Amado-${VERSION}.dmg)"
+            echo "- In-app: Sparkle will pick this up on its next check."
+          } >> "$NOTES"
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="${{ github.ref_name }}"
+          DMG="$RUNNER_TEMP/Amado-${{ steps.version.outputs.version }}.dmg"
+          APPCAST="$RUNNER_TEMP/release/appcast.xml"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$DMG" "$APPCAST" --clobber
+            gh release edit "$TAG" --title "$TAG" --notes-file "$RUNNER_TEMP/release-notes.md"
+          else
+            gh release create "$TAG" "$DMG" "$APPCAST" \
+              --title "$TAG" \
+              --notes-file "$RUNNER_TEMP/release-notes.md"
+          fi
+
+      - name: Update Homebrew cask
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.version.outputs.version }}"
+          DMG="$RUNNER_TEMP/Amado-${VERSION}.dmg"
+          SHA="$(shasum -a 256 "$DMG" | awk '{print $1}')"
+          git clone --depth 1 \
+            "https://x-access-token:${TAP_TOKEN}@github.com/${{ github.repository_owner }}/homebrew-tap.git" \
+            "$RUNNER_TEMP/tap"
+          CASK="$RUNNER_TEMP/tap/Casks/amado.rb"
+          if [ ! -f "$CASK" ]; then
+            CASK="$CASK" VERSION="$VERSION" SHA="$SHA" ruby <<'RUBY'
+          path = ENV.fetch("CASK")
+          version = ENV.fetch("VERSION")
+          sha = ENV.fetch("SHA")
+          File.write(path, <<~CASK)
+            cask "amado" do
+              version "#{version}"
+              sha256 "#{sha}"
+
+              url "https://github.com/PangMo5/Amado/releases/download/v\#{version}/Amado-\#{version}.dmg"
+              name "Amado"
+              desc "Lock your Mac from iPhone, Apple Watch, widgets, or Control Center"
+              homepage "https://github.com/PangMo5/Amado"
+
+              auto_updates true
+              depends_on macos: ">= :sequoia"
+
+              app "Amado.app"
+
+              zap trash: [
+                "~/.config/amado",
+                "~/Library/Caches/dev.PangMo5.Amado",
+                "~/Library/Preferences/dev.PangMo5.Amado.plist",
+              ]
+            end
+          CASK
+          RUBY
+          else
+            sed -i.bak -E "s|^  version \".*\"|  version \"${VERSION}\"|" "$CASK"
+            sed -i.bak -E "s|^  sha256 \".*\"|  sha256 \"${SHA}\"|" "$CASK"
+            rm -f "${CASK}.bak"
+          fi
+          cd "$RUNNER_TEMP/tap"
+          if [ -z "$(git status --porcelain -- Casks/amado.rb)" ]; then
+            echo "Cask already up to date."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/amado.rb
+          git commit -m "amado ${VERSION}"
+          git push
+
+      - name: Assemble GitHub Pages site
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          SITE="$RUNNER_TEMP/site"
+          mkdir -p "$SITE"
+          cp web/*.html web/*.css "$SITE/"
+          sed "s/__VERSION__/${VERSION}/g" web/index.html > "$SITE/index.html"
+          cp Amado/Resources/Assets.xcassets/AppIcon.appiconset/icon_1024.png "$SITE/icon.png"
+          cp "$RUNNER_TEMP/release/appcast.xml" "$SITE/appcast.xml"
+          BUST="${GITHUB_SHA:0:8}"
+          sed -i.bak "s#\"./style.css\"#\"./style.css?v=${BUST}\"#g" "$SITE"/*.html
+          rm -f "$SITE"/*.html.bak
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: ${{ runner.temp }}/site
+
+  deploy-pages:
+    needs: release
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

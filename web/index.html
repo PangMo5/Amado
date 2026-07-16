@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Amado — Lock your Mac from anywhere</title>
+<meta name="description" content="Lock your Mac from iPhone, Apple Watch, a widget, or Control Center — instantly on your LAN or through a tunnel you operate." />
+<meta name="theme-color" content="#0b0b0f" />
+<link rel="icon" type="image/png" href="./icon.png" />
+<link rel="stylesheet" href="./style.css" />
+<meta property="og:title" content="Amado" />
+<meta property="og:description" content="Lock your Mac from anywhere." />
+<meta property="og:image" content="./icon.png" />
+<meta property="og:type" content="website" />
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="nav-brand" href="./"><img src="./icon.png" alt="" /> <span>Amado</span></a>
+    <input type="checkbox" id="nav-toggle" class="nav-toggle" />
+    <label for="nav-toggle" class="nav-burger" aria-label="Menu"><span></span></label>
+    <div class="nav-links">
+      <a href="#controls">Controls</a>
+      <a href="#network">Network</a>
+      <a href="#proximity">Auto-lock</a>
+      <a href="#security">Security</a>
+      <a href="./configuration.html">Configuration</a>
+      <a href="./releases.html">Releases</a>
+      <a href="https://github.com/PangMo5/Amado">GitHub</a>
+    </div>
+    <label for="nav-toggle" class="nav-scrim" aria-hidden="true"></label>
+  </div>
+</nav>
+
+<section class="hero" id="top">
+  <div class="wrap">
+    <img class="hero-icon" src="./icon.png" alt="Amado app icon" />
+    <h1>Close the shutters.</h1>
+    <p class="sub">Lock your Mac from iPhone or Apple Watch.<br />Nearby or anywhere.</p>
+    <div class="cta">
+      <a class="btn btn-primary download-link" href="https://github.com/PangMo5/Amado/releases">Download for macOS</a>
+      <a class="btn btn-link" href="https://github.com/PangMo5/Amado">View on GitHub&nbsp;&rsaquo;</a>
+    </div>
+    <div class="brew">
+      <code id="brew-cmd">brew install --cask PangMo5/tap/amado</code>
+      <button onclick="navigator.clipboard.writeText(document.getElementById('brew-cmd').textContent)">Copy</button>
+    </div>
+    <p class="meta">Version <span id="version">__VERSION__</span> · macOS 15, iOS 18, watchOS 11 · Free &amp; open source</p>
+  </div>
+</section>
+
+<section class="showcase" aria-label="A lock command traveling from Apple Watch through iPhone to Mac">
+  <div class="relay">
+    <div class="device watch-device"><span class="device-icon">⌚️</span><strong>Watch</strong><small>One tap</small></div>
+    <div class="relay-line"><i></i><span>relay</span></div>
+    <div class="device phone-device"><span class="device-icon">📱</span><strong>iPhone</strong><small>Authenticates</small></div>
+    <div class="relay-line"><i></i><span>LAN · HTTPS</span></div>
+    <div class="device mac-device"><span class="device-icon">💻</span><strong>Mac</strong><small>Locked</small></div>
+    <div class="lock-pulse" aria-hidden="true">🔒</div>
+  </div>
+  <p class="scene-caption">The local network first. Your tunnel only when needed.</p>
+</section>
+
+<section id="controls" class="section-gray">
+  <div class="wrap">
+    <p class="eyebrow">One action, everywhere</p>
+    <h2>Lock from wherever your hand already is.</h2>
+    <p class="sub">The same paired Macs are available across the iPhone app, Home Screen, Control Center, and Apple Watch.</p>
+    <div class="features">
+      <div class="feature"><div class="ico">📱</div><h3>iPhone app</h3><p>Pair by scanning the QR code on your Mac, then lock any saved Mac with one tap.</p></div>
+      <div class="feature"><div class="ico">⌚️</div><h3>Apple Watch</h3><p>Send the lock action from your wrist through the paired iPhone.</p></div>
+      <div class="feature"><div class="ico">◉</div><h3>Widget and Control</h3><p>Put a Mac on the Home Screen or add Lock Mac directly to Control Center.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="network">
+  <div class="wrap">
+    <p class="eyebrow">Local first</p>
+    <h2>Fast nearby. Reachable away.</h2>
+    <p class="sub">Bonjour finds the Mac automatically on your LAN. Off-network, Amado can use an HTTPS tunnel you choose and operate.</p>
+    <div class="features">
+      <div class="feature"><div class="ico">⚡️</div><h3>Direct on LAN</h3><p>No cloud hop, account, or hosted Amado service. A valid command goes straight to the Mac agent.</p></div>
+      <div class="feature"><div class="ico">🌐</div><h3>Bring your own tunnel</h3><p>Use Cloudflare Tunnel, Tailscale Funnel, ngrok, or another HTTPS tunnel with a stable hostname.</p></div>
+      <div class="feature"><div class="ico">↩️</div><h3>Clear fallback</h3><p>The client tries LAN first, then remote. With neither available it reports the failure instead of silently queuing.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="proximity" class="section-gray">
+  <div class="wrap">
+    <p class="eyebrow">Walk-away auto-lock</p>
+    <h2>Leave. Your Mac closes up.</h2>
+    <p class="sub">The Mac watches the selected iPhone's Bluetooth signal and locks after it stays beyond your calibrated threshold.</p>
+    <div class="features">
+      <div class="feature"><div class="ico">🚶</div><h3>No phone app needed</h3><p>Proximity sensing runs on the Mac; the Amado iPhone app does not need to remain open.</p></div>
+      <div class="feature"><div class="ico">📶</div><h3>Tunable for your room</h3><p>Choose the RSSI threshold, grace period, and smoothing that fit your desk and environment.</p></div>
+      <div class="feature"><div class="ico">☁️</div><h3>Stable identity</h3><p>Use the same iCloud account on Mac and iPhone so macOS can recognize the phone across Bluetooth address rotation.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="security">
+  <div class="wrap">
+    <p class="eyebrow">A narrow, authenticated capability</p>
+    <h2>It can lock. It cannot unlock.</h2>
+    <p class="sub">QR pairing provisions a 256-bit secret. Every command carries an HMAC, fresh timestamp, and one-time nonce.</p>
+    <div class="features">
+      <div class="feature"><div class="ico">🔑</div><h3>Keychain on Mac</h3><p>The pairing secret is kept out of config.toml and stored in the macOS Keychain.</p></div>
+      <div class="feature"><div class="ico">🛡️</div><h3>Replay resistant</h3><p>HMAC-SHA256 authenticates commands; timestamp and nonce checks reject stale or duplicated requests.</p></div>
+      <div class="feature"><div class="ico">🏠</div><h3>Loopback remote listener</h3><p>The tunnel-facing HTTP server binds only to 127.0.0.1, not directly to the LAN.</p></div>
+    </div>
+    <div class="cta"><a class="btn btn-link" href="https://github.com/PangMo5/Amado/blob/main/docs/SECURITY.md">Read the security model&nbsp;&rsaquo;</a></div>
+  </div>
+</section>
+
+<section class="section-dark" id="download">
+  <div class="wrap">
+    <h2>Get Amado.</h2>
+    <p class="sub">Free, open source, and built for your Apple devices.</p>
+    <div class="cta">
+      <a class="btn btn-primary download-link" href="https://github.com/PangMo5/Amado/releases">Download for macOS</a>
+      <a class="btn btn-link" href="./configuration.html">Set it up&nbsp;&rsaquo;</a>
+    </div>
+    <div class="brew">
+      <code id="brew-cmd-2">brew install --cask PangMo5/tap/amado</code>
+      <button onclick="navigator.clipboard.writeText(document.getElementById('brew-cmd-2').textContent)">Copy</button>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="footer-inner">
+    <div class="footer-links">
+      <a href="https://github.com/PangMo5/Amado">GitHub</a>
+      <a href="./releases.html">Releases</a>
+      <a href="./configuration.html">Configuration</a>
+      <a href="https://github.com/PangMo5/Amado/blob/main/LICENSE">License</a>
+    </div>
+    <p>Amado is open source under the Mozilla Public License 2.0. Not affiliated with Apple Inc.</p>
+    <p class="footer-apps">Apps by <a href="https://pangmo5.dev/">PangMo5</a> — <span class="cur" aria-current="page">Amado</span> · <a href="https://pangmo5.dev/SwiftyCrow/">SwiftyCrow</a> · <a href="https://pangmo5.dev/Tatami/">Tatami</a></p>
+  </div>
+</footer>
+
+<script>
+  (async () => {
+    try {
+      const res = await fetch("https://api.github.com/repos/PangMo5/Amado/releases/latest", {
+        headers: { Accept: "application/vnd.github+json" },
+      });
+      if (!res.ok) return;
+      const rel = await res.json();
+      const version = (rel.tag_name || "").replace(/^v/, "");
+      const dmg = (rel.assets || []).find((asset) => /\.dmg$/i.test(asset.name));
+      if (version) document.getElementById("version").textContent = version;
+      if (dmg && /^https:\/\/github\.com\//.test(dmg.browser_download_url)) {
+        document.querySelectorAll("a.download-link").forEach((link) => { link.href = dmg.browser_download_url; });
+      }
+    } catch (error) { /* keep build-time fallbacks */ }
+  })();
+</script>
+
+</body>
+</html>
