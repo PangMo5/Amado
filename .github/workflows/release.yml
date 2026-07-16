@@ -276,7 +276,7 @@ jobs:
 
               url "https://github.com/PangMo5/Amado/releases/download/v\#{version}/Amado-\#{version}.dmg"
               name "Amado"
-              desc "Lock your Mac from iPhone, Apple Watch, widgets, or Control Center"
+              desc "Lock your Mac with one tap or automatically when you walk away"
               homepage "https://github.com/PangMo5/Amado"
 
               auto_updates true
