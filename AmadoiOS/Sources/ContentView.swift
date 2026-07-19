@@ -3,6 +3,8 @@ import ComposableArchitecture
 import SFSafeSymbols
 import SwiftUI
 
+// MARK: - ContentView
+
 struct ContentView: View {
 
   // MARK: Internal
@@ -13,7 +15,7 @@ struct ContentView: View {
     NavigationStack {
       List {
         if store.pairedMacs.isEmpty {
-          emptyState
+          PairingEmptyStateView(macAppURL: macAppURL)
         } else {
           Section("Your Macs") {
             ForEach(store.pairedMacs) { mac in
@@ -25,9 +27,30 @@ struct ContentView: View {
               }
             }
           }
+
+          Section("Quick Access") {
+            NavigationLink {
+              ControlCenterSettingsView(
+                macs: store.pairedMacs,
+                selectedMacID: store.controlCenterSelection.macID,
+                onSelect: { store.send(.selectControlCenterMac($0)) },
+              )
+            } label: {
+              QuickAccessRow(
+                title: "Control Center",
+                detail: controlCenterDetail,
+                systemImage: "switch.2",
+              )
+            }
+            QuickAccessRow(
+              title: "Home Screen Widget",
+              detail: "Add the Amado widget, then long-press it to choose a Mac.",
+              systemImage: "square.grid.2x2",
+            )
+          }
         }
 
-        Section("Add / re-pair a Mac") {
+        Section {
           Button {
             isScanning = true
           } label: {
@@ -38,6 +61,15 @@ struct ContentView: View {
           } label: {
             Label("Paste pairing secret", systemSymbol: .docOnClipboard)
           }
+          if !store.pairedMacs.isEmpty {
+            Link(destination: macAppURL) {
+              Label("Get Amado for Mac", systemImage: "arrow.down.app")
+            }
+          }
+        } header: {
+          Text("Add or re-pair a Mac")
+        } footer: {
+          Text("The free Amado for Mac menu bar app is required.")
         }
       }
       .navigationTitle("Amado")
@@ -62,12 +94,16 @@ struct ContentView: View {
 
   @State private var isScanning = false
 
-  private var emptyState: some View {
-    ContentUnavailableView {
-      Label("No Macs paired", systemSymbol: .desktopcomputer)
-    } description: {
-      Text("On your Mac: Amado menu → “Show pairing code…”, then scan it or paste the secret.")
+  private let macAppURL = URL(string: "https://pangmo5.dev/Amado/")!
+
+  private var controlCenterDetail: LocalizedStringResource {
+    guard
+      let selectedMacID = store.controlCenterSelection.macID,
+      let mac = store.pairedMacs.first(where: { $0.id == selectedMacID })
+    else {
+      return "Choose which Mac the Lock Mac control uses."
     }
+    return "Locks \(mac.displayName). Tap to choose another Mac."
   }
 
   private var scannerSheet: some View {
@@ -107,4 +143,98 @@ struct ContentView: View {
     .disabled(store.sendingMacID != nil)
   }
 
+}
+
+// MARK: - ControlCenterSettingsView
+
+private struct ControlCenterSettingsView: View {
+  let macs: [PairedMac]
+  let selectedMacID: UUID?
+  let onSelect: (UUID) -> Void
+
+  var body: some View {
+    List {
+      Section {
+        ForEach(macs) { mac in
+          Button {
+            onSelect(mac.id)
+          } label: {
+            HStack {
+              Label(mac.displayName, systemSymbol: .desktopcomputer)
+              Spacer()
+              if selectedMacID == mac.id {
+                Image(systemSymbol: .checkmark)
+                  .foregroundStyle(.tint)
+              }
+            }
+            .contentShape(.rect)
+          }
+          .buttonStyle(.plain)
+        }
+      } header: {
+        Text("Mac")
+      } footer: {
+        Text("The Lock Mac control in Control Center locks the selected Mac.")
+      }
+    }
+    .navigationTitle("Control Center")
+  }
+}
+
+// MARK: - PairingEmptyStateView
+
+private struct PairingEmptyStateView: View {
+  let macAppURL: URL
+
+  var body: some View {
+    VStack(spacing: 12) {
+      Image(systemSymbol: .desktopcomputer)
+        .font(.system(size: 40))
+        .foregroundStyle(.secondary)
+
+      Text("Pair your Mac")
+        .font(.title2.bold())
+
+      Text(
+        "Install Amado for Mac, choose Show pairing code in the Mac menu, then scan or paste the code here."
+      )
+      .foregroundStyle(.secondary)
+      .multilineTextAlignment(.center)
+
+      Link(destination: macAppURL) {
+        Text("Get Amado for Mac")
+          .frame(maxWidth: .infinity)
+      }
+      .buttonStyle(.borderedProminent)
+    }
+    .frame(maxWidth: .infinity)
+    .padding(.vertical, 20)
+  }
+}
+
+// MARK: - QuickAccessRow
+
+private struct QuickAccessRow: View {
+  let title: LocalizedStringResource
+  let detail: LocalizedStringResource
+  let systemImage: String
+
+  var body: some View {
+    HStack(alignment: .top, spacing: 12) {
+      Image(systemName: systemImage)
+        .font(.headline)
+        .foregroundStyle(.white)
+        .frame(width: 34, height: 34)
+        .background(Color("BrandTint").gradient, in: .circle)
+
+      VStack(alignment: .leading, spacing: 3) {
+        Text(title)
+          .font(.headline)
+        Text(detail)
+          .font(.subheadline)
+          .foregroundStyle(.secondary)
+      }
+    }
+    .padding(.vertical, 4)
+  }
 }

@@ -1,0 +1,10 @@
+Amado is a companion app for the free Amado macOS menu bar agent. The companion requires macOS 15 or later and does not require an account or purchase.
+
+Review steps:
+1. On the iPhone setup screen, tap Get Amado for Mac or visit https://pangmo5.dev/Amado/.
+2. Install and open the Mac app.
+3. Choose Show pairing code in the Amado menu bar menu.
+4. In the iPhone app, tap Scan pairing QR and scan the code.
+5. Tap the paired Mac to lock it.
+
+The one-tap lock action is available in the iPhone app, Apple Watch app, Home Screen widget, and Control Center. Bluetooth proximity auto-lock is configured and performed by the Mac app, so it does not require the iPhone app to remain open.

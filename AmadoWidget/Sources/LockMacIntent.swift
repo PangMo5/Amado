@@ -14,17 +14,17 @@ struct NoPairedMacError: Error, LocalizedError {
 // MARK: - LockMacIntent
 
 /// The action a widget button / Control Center control runs: lock a Mac. If
-/// `mac` is set (widget configured with a target) it locks that one; otherwise
-/// it locks the first paired Mac. Runs in the extension — reads the shared
-/// paired-Macs list and dispatches directly, without opening the app.
+/// `macID` is set (widget configured with a target) it locks that one; otherwise
+/// it uses the Control Center selection from the iPhone app. It runs in the
+/// extension and reads the shared paired-Macs list without opening the app.
 struct LockMacIntent: AppIntent {
 
   // MARK: Lifecycle
 
   init() { }
 
-  init(mac: MacEntity?) {
-    self.mac = mac
+  init(macID: String?) {
+    self.macID = macID
   }
 
   // MARK: Internal
@@ -33,12 +33,16 @@ struct LockMacIntent: AppIntent {
   static let description = IntentDescription("Locks a paired Mac.")
   static let openAppWhenRun = false
 
-  @Parameter(title: "Mac")
-  var mac: MacEntity?
+  @Parameter(title: "Mac ID")
+  var macID: String?
 
   func perform() async throws -> some IntentResult {
     let paired = PairedMacsStore.load()
-    let target = mac.flatMap { entity in paired.first { $0.id == entity.id } } ?? paired.first
+    let selectedID = ControlCenterMacStore.load().macID
+    let requestedID = macID.flatMap(UUID.init(uuidString:))
+    let target = paired.first { $0.id == requestedID }
+      ?? paired.first { $0.id == selectedID }
+      ?? paired.first
     guard let target else { throw NoPairedMacError() }
     try await AmadoLockDispatcher.dispatch(.lock(origin: "Widget"), to: target)
     return .result()
@@ -55,6 +59,6 @@ struct SelectMacIntent: WidgetConfigurationIntent {
   static let title: LocalizedStringResource = "Choose Mac"
   static let description = IntentDescription("Pick which Mac this widget locks.")
 
-  @Parameter(title: "Mac")
-  var mac: MacEntity?
+  @Parameter(title: "Mac", optionsProvider: MacOptionsProvider())
+  var mac: String?
 }

@@ -1,0 +1,172 @@
+name: Release iOS
+
+on:
+  push:
+    tags:
+      - "iOS-v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing iOS-v* tag to distribute"
+        required: true
+        type: string
+      distribution:
+        description: "Distribution target"
+        required: true
+        default: internal
+        type: choice
+        options:
+          - internal
+          - external
+          - app_store
+          - metadata
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-ios-${{ inputs.tag || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-ios:
+    runs-on: macos-26
+    timeout-minutes: 90
+    env:
+      CI: "true"
+      FASTLANE_HIDE_CHANGELOG: "true"
+      FASTLANE_SKIP_UPDATE_CHECK: "true"
+      LANG: en_US.UTF-8
+      LC_ALL: en_US.UTF-8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Resolve iOS version
+        id: version
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          case "$RELEASE_TAG" in
+            iOS-v*) ;;
+            *)
+              echo "::error::Release tag must start with iOS-v (received: $RELEASE_TAG)." >&2
+              exit 1
+              ;;
+          esac
+          TAG_VERSION="${RELEASE_TAG#iOS-v}"
+          PROJECT_VERSION="$(grep -E '^let iOSVersion' Project.swift | sed -E 's/.*"([^"]+)".*/\1/')"
+          if [ "$TAG_VERSION" != "$PROJECT_VERSION" ]; then
+            echo "::error::Tag ($TAG_VERSION) does not match Project.swift iOSVersion ($PROJECT_VERSION)." >&2
+            exit 1
+          fi
+          if ! grep -qE "^## ${TAG_VERSION} \\(" CHANGELOG-iOS.md; then
+            echo "::error::CHANGELOG-iOS.md has no entry for $TAG_VERSION." >&2
+            exit 1
+          fi
+          echo "version=$TAG_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Validate release secrets
+        env:
+          AC_API_ISSUER_ID: ${{ secrets.AC_API_ISSUER_ID }}
+          AC_API_KEY_ID: ${{ secrets.AC_API_KEY_ID }}
+          AC_API_KEY_P8: ${{ secrets.AC_API_KEY_P8 }}
+          APP_REVIEW_CONTACT_EMAIL: ${{ secrets.APP_REVIEW_CONTACT_EMAIL }}
+          APP_REVIEW_CONTACT_FIRST_NAME: ${{ secrets.APP_REVIEW_CONTACT_FIRST_NAME }}
+          APP_REVIEW_CONTACT_LAST_NAME: ${{ secrets.APP_REVIEW_CONTACT_LAST_NAME }}
+          APP_REVIEW_CONTACT_PHONE: ${{ secrets.APP_REVIEW_CONTACT_PHONE }}
+          DEVELOPMENT_TEAM: ${{ secrets.DEVELOPMENT_TEAM }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          MATCH_GIT_PRIVATE_KEY: ${{ secrets.MATCH_GIT_PRIVATE_KEY }}
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          DISTRIBUTION: ${{ inputs.distribution || 'internal' }}
+          TESTFLIGHT_EXTERNAL_GROUPS: ${{ vars.TESTFLIGHT_EXTERNAL_GROUPS }}
+          TESTFLIGHT_INTERNAL_GROUPS: ${{ vars.TESTFLIGHT_INTERNAL_GROUPS }}
+        run: |
+          set -euo pipefail
+          required=(
+            AC_API_ISSUER_ID
+            AC_API_KEY_ID
+            AC_API_KEY_P8
+            DEVELOPMENT_TEAM
+          )
+          if [ "$DISTRIBUTION" != "metadata" ]; then
+            required+=(
+              KEYCHAIN_PASSWORD
+              MATCH_GIT_PRIVATE_KEY
+              MATCH_PASSWORD
+            )
+          fi
+          if [ "$DISTRIBUTION" = "external" ] || [ "$DISTRIBUTION" = "app_store" ]; then
+            required+=(
+              APP_REVIEW_CONTACT_EMAIL
+              APP_REVIEW_CONTACT_FIRST_NAME
+              APP_REVIEW_CONTACT_LAST_NAME
+              APP_REVIEW_CONTACT_PHONE
+            )
+          fi
+          missing=()
+          for name in "${required[@]}"; do
+            if [ -z "${!name:-}" ]; then
+              missing+=("$name")
+            fi
+          done
+          if [ "${#missing[@]}" -ne 0 ]; then
+            printf '::error::Missing release secret: %s\n' "${missing[@]}" >&2
+            exit 1
+          fi
+          if [ "$DEVELOPMENT_TEAM" != "4BHXT8RHFR" ]; then
+            echo "::error::DEVELOPMENT_TEAM does not match the Kwangmin Bae personal team." >&2
+            exit 1
+          fi
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "4.0"
+          bundler-cache: true
+
+      - name: Prepare private key files
+        env:
+          AC_API_KEY_P8: ${{ secrets.AC_API_KEY_P8 }}
+          MATCH_GIT_PRIVATE_KEY: ${{ secrets.MATCH_GIT_PRIVATE_KEY }}
+          DISTRIBUTION: ${{ inputs.distribution || 'internal' }}
+        run: |
+          set -euo pipefail
+          umask 077
+
+          AC_API_KEY_PATH="$RUNNER_TEMP/app-store-connect-api-key.p8"
+          printf '%s\n' "$AC_API_KEY_P8" > "$AC_API_KEY_PATH"
+          echo "AC_API_KEY_PATH=$AC_API_KEY_PATH" >> "$GITHUB_ENV"
+
+          if [ "$DISTRIBUTION" != "metadata" ]; then
+            MATCH_GIT_PRIVATE_KEY_PATH="$RUNNER_TEMP/amado-match-deploy-key"
+            printf '%s\n' "$MATCH_GIT_PRIVATE_KEY" > "$MATCH_GIT_PRIVATE_KEY_PATH"
+            echo "MATCH_GIT_PRIVATE_KEY=$MATCH_GIT_PRIVATE_KEY_PATH" >> "$GITHUB_ENV"
+          fi
+
+      - uses: jdx/mise-action@v4
+        if: ${{ inputs.distribution != 'metadata' }}
+
+      - name: Run Fastlane distribution
+        env:
+          AC_API_ISSUER_ID: ${{ secrets.AC_API_ISSUER_ID }}
+          AC_API_KEY_ID: ${{ secrets.AC_API_KEY_ID }}
+          APP_REVIEW_CONTACT_EMAIL: ${{ secrets.APP_REVIEW_CONTACT_EMAIL }}
+          APP_REVIEW_CONTACT_FIRST_NAME: ${{ secrets.APP_REVIEW_CONTACT_FIRST_NAME }}
+          APP_REVIEW_CONTACT_LAST_NAME: ${{ secrets.APP_REVIEW_CONTACT_LAST_NAME }}
+          APP_REVIEW_CONTACT_PHONE: ${{ secrets.APP_REVIEW_CONTACT_PHONE }}
+          DEVELOPMENT_TEAM: ${{ secrets.DEVELOPMENT_TEAM }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          DISTRIBUTION: ${{ inputs.distribution || 'internal' }}
+          TESTFLIGHT_EXTERNAL_GROUPS: ${{ vars.TESTFLIGHT_EXTERNAL_GROUPS }}
+          TESTFLIGHT_INTERNAL_GROUPS: ${{ vars.TESTFLIGHT_INTERNAL_GROUPS }}
+        run: bundle exec fastlane ios "$DISTRIBUTION" version:${{ steps.version.outputs.version }}
+
+      - name: Remove private key files
+        if: ${{ always() }}
+        run: |
+          [ -z "${AC_API_KEY_PATH:-}" ] || rm -f "$AC_API_KEY_PATH"
+          [ -z "${MATCH_GIT_PRIVATE_KEY:-}" ] || rm -f "$MATCH_GIT_PRIVATE_KEY"

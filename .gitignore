@@ -26,6 +26,14 @@ buildServer.json
 *.dSYM.zip
 *.dSYM
 .dsyms/
+/build/
+
+# Fastlane and Bundler output
+.bundle/
+vendor/bundle/
+fastlane/report.xml
+fastlane/README.md
+fastlane/test_output/
 
 # Local mise overrides (development team, secrets)
 .mise.local.toml

@@ -6,10 +6,14 @@ let bundleIdPrefix = "dev.PangMo5"
 // (TUIST_DEVELOPMENT_TEAM, …); in CI they come from repository secrets.
 let developmentTeam = Environment.developmentTeam.getString(default: "")
 let sparklePublicEDKey = Environment.sparklePublicEdKey.getString(default: "")
-// Single source of truth for the marketing version.
-let appVersion = "0.1.0"
-// Build number is injected by CI (github.run_number); 1 for local builds.
+let macOSVersion = "0.1.0"
+let iOSVersion = "0.1.0"
+// Release workflows inject the build number. Local builds use 1.
 let buildNumber = Environment.buildNumber.getString(default: "1")
+
+let iOSProvisioningProfile = Environment.iosProvisioningProfile.getString(default: "")
+let watchProvisioningProfile = Environment.watchProvisioningProfile.getString(default: "")
+let widgetProvisioningProfile = Environment.widgetProvisioningProfile.getString(default: "")
 
 /// Shown on the local-network privacy prompt. Clients find the Mac via Bonjour
 /// on the LAN.
@@ -40,6 +44,16 @@ let signingSettings: SettingsDictionary = [
   "CODE_SIGN_IDENTITY": "Apple Development",
   "DEVELOPMENT_TEAM": SettingValue(stringLiteral: developmentTeam),
 ]
+
+func mobileSigningSettings(provisioningProfile: String) -> SettingsDictionary {
+  guard !provisioningProfile.isEmpty else { return signingSettings }
+
+  return signingSettings.merging([
+    "CODE_SIGN_STYLE": "Manual",
+    "CODE_SIGN_IDENTITY": "Apple Distribution",
+    "PROVISIONING_PROFILE_SPECIFIER": SettingValue(stringLiteral: provisioningProfile),
+  ]) { $1 }
+}
 
 let project = Project(
   name: "Amado",
@@ -92,7 +106,7 @@ let project = Project(
       ],
       settings: .settings(
         base: signingSettings.merging([
-          "MARKETING_VERSION": SettingValue(stringLiteral: appVersion),
+          "MARKETING_VERSION": SettingValue(stringLiteral: macOSVersion),
           "CURRENT_PROJECT_VERSION": SettingValue(stringLiteral: buildNumber),
           "SPARKLE_PUBLIC_ED_KEY": SettingValue(stringLiteral: sparklePublicEDKey),
           "ASSETCATALOG_COMPILER_APPICON_NAME": "AppIcon",
@@ -126,9 +140,10 @@ let project = Project(
         "NSLocalNetworkUsageDescription": .string(localNetworkUsage),
         "NSBonjourServices": .array([.string("_amado._tcp")]),
         "NSCameraUsageDescription": "Amado scans the pairing QR code shown on your Mac.",
+        "ITSAppUsesNonExemptEncryption": false,
       ]),
       sources: ["AmadoiOS/Sources/**"],
-      resources: ["AmadoiOS/Resources/**"],
+      resources: ["AmadoiOS/Resources/**", "MobileResources/**"],
       entitlements: .file(path: "AmadoiOS/AmadoiOS.entitlements"),
       dependencies: [
         .target(name: "AmadoKit"),
@@ -138,10 +153,11 @@ let project = Project(
         .external(name: "Sharing"),
         .external(name: "SFSafeSymbols"),
       ],
-      settings: .settings(base: signingSettings.merging([
-        "MARKETING_VERSION": SettingValue(stringLiteral: appVersion),
+      settings: .settings(base: mobileSigningSettings(provisioningProfile: iOSProvisioningProfile).merging([
+        "MARKETING_VERSION": SettingValue(stringLiteral: iOSVersion),
         "CURRENT_PROJECT_VERSION": SettingValue(stringLiteral: buildNumber),
         "ASSETCATALOG_COMPILER_APPICON_NAME": "AppIcon",
+        "ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME": "BrandTint",
       ]) { $1 }),
     ),
 
@@ -158,21 +174,23 @@ let project = Project(
         "CFBundleVersion": "$(CURRENT_PROJECT_VERSION)",
         "CFBundleDisplayName": "Amado",
         "WKApplication": true,
+        "ITSAppUsesNonExemptEncryption": false,
         // Ties this watch app to the phone app so WatchConnectivity pairs them.
         "WKCompanionAppBundleIdentifier": "\(bundleIdPrefix).Amado.iOS",
       ]),
       sources: ["AmadoWatch/Sources/**"],
-      resources: ["AmadoiOS/Resources/**"],
+      resources: ["AmadoiOS/Resources/**", "MobileResources/**"],
       dependencies: [
         .target(name: "AmadoKit"),
         .external(name: "ComposableArchitecture"),
         .external(name: "Sharing"),
         .external(name: "SFSafeSymbols"),
       ],
-      settings: .settings(base: signingSettings.merging([
-        "MARKETING_VERSION": SettingValue(stringLiteral: appVersion),
+      settings: .settings(base: mobileSigningSettings(provisioningProfile: watchProvisioningProfile).merging([
+        "MARKETING_VERSION": SettingValue(stringLiteral: iOSVersion),
         "CURRENT_PROJECT_VERSION": SettingValue(stringLiteral: buildNumber),
         "ASSETCATALOG_COMPILER_APPICON_NAME": "AppIcon",
+        "ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME": "BrandTint",
       ]) { $1 }),
     ),
 
@@ -189,6 +207,7 @@ let project = Project(
         "CFBundleShortVersionString": "$(MARKETING_VERSION)",
         "CFBundleVersion": "$(CURRENT_PROJECT_VERSION)",
         "CFBundleDisplayName": "Amado",
+        "ITSAppUsesNonExemptEncryption": false,
         // The widget runs the lock intent in its own process, so it needs its
         // own Bonjour declaration — without it iOS blocks the browse and the
         // widget can't reach the agent even on the same network.
@@ -199,13 +218,15 @@ let project = Project(
         ]),
       ]),
       sources: ["AmadoWidget/Sources/**"],
+      resources: ["MobileResources/**"],
       entitlements: .file(path: "AmadoWidget/AmadoWidget.entitlements"),
       dependencies: [
         .target(name: "AmadoKit")
       ],
-      settings: .settings(base: signingSettings.merging([
-        "MARKETING_VERSION": SettingValue(stringLiteral: appVersion),
+      settings: .settings(base: mobileSigningSettings(provisioningProfile: widgetProvisioningProfile).merging([
+        "MARKETING_VERSION": SettingValue(stringLiteral: iOSVersion),
         "CURRENT_PROJECT_VERSION": SettingValue(stringLiteral: buildNumber),
+        "ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME": "BrandTint",
       ]) { $1 }),
     ),
 

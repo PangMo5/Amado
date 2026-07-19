@@ -79,7 +79,7 @@ private final class PhoneWatchLink: NSObject, WCSessionDelegate, @unchecked Send
     pendingMacs = data
     let session = WCSession.default
     guard session.activationState == .activated else { return }
-    try? session.updateApplicationContext([WatchMessage.macsKey: data])
+    updateMacs(data, on: session)
   }
 
   func session(_: WCSession, didReceiveMessage message: [String: Any]) {
@@ -98,11 +98,16 @@ private final class PhoneWatchLink: NSObject, WCSessionDelegate, @unchecked Send
   func session(
     _ session: WCSession,
     activationDidCompleteWith state: WCSessionActivationState,
-    error _: (any Error)?,
+    error: (any Error)?,
   ) {
+    if let error {
+      logger.error("activation failed: \(error.localizedDescription, privacy: .public)")
+    } else {
+      logger.notice("activation completed with state \(state.rawValue, privacy: .public)")
+    }
     // Flush the latest Mac list once the session is up.
     if state == .activated, let data = pendingMacs {
-      try? session.updateApplicationContext([WatchMessage.macsKey: data])
+      updateMacs(data, on: session)
     }
   }
 
@@ -117,6 +122,15 @@ private final class PhoneWatchLink: NSObject, WCSessionDelegate, @unchecked Send
 
   private let continuation: AsyncStream<UUID?>.Continuation
   private var pendingMacs: Data?
+
+  private func updateMacs(_ data: Data, on session: WCSession) {
+    do {
+      try session.updateApplicationContext([WatchMessage.macsKey: data])
+      logger.notice("updated watch application context")
+    } catch {
+      logger.error("application context update failed: \(error.localizedDescription, privacy: .public)")
+    }
+  }
 
   private func handle(_ message: [String: Any]) {
     guard message[WatchMessage.actionKey] as? String == WatchMessage.lockAction else { return }

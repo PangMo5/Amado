@@ -16,6 +16,8 @@ struct LockSenderFeature {
   struct State: Equatable {
     /// Shared with the widget/control extensions via the App Group container.
     @Shared(.fileStorage(PairedMacsStore.fileURL)) var pairedMacs = [PairedMac]()
+    /// The Mac used by the static Control Center control.
+    @Shared(.fileStorage(ControlCenterMacStore.fileURL)) var controlCenterSelection = ControlCenterMacSelection()
     var status = ""
     /// The Mac a send is in flight to, for a per-row spinner.
     var sendingMacID: UUID?
@@ -28,6 +30,7 @@ struct LockSenderFeature {
     case pasteTapped
     case scanned(String)
     case removeMac(UUID)
+    case selectControlCenterMac(UUID)
     case lockResult(macID: UUID, message: String)
   }
 
@@ -38,6 +41,7 @@ struct LockSenderFeature {
     Reduce { state, action in
       switch action {
       case .task:
+        normalizeControlCenterSelection(&state)
         let macs = watchMacs(state)
         return .run { send in
           watchLink.activate()
@@ -69,7 +73,13 @@ struct LockSenderFeature {
 
       case .removeMac(let id):
         state.$pairedMacs.withLock { $0.removeAll { $0.id == id } }
+        normalizeControlCenterSelection(&state)
         return syncEffect(state)
+
+      case .selectControlCenterMac(let id):
+        guard state.pairedMacs.contains(where: { $0.id == id }) else { return .none }
+        state.$controlCenterSelection.withLock { $0.macID = id }
+        return .none
 
       case .lockResult(let macID, let message):
         if state.sendingMacID == macID { state.sendingMacID = nil }
@@ -83,6 +93,13 @@ struct LockSenderFeature {
 
   private func watchMacs(_ state: State) -> [WatchMac] {
     state.pairedMacs.map { WatchMac(id: $0.id, name: $0.displayName) }
+  }
+
+  private func normalizeControlCenterSelection(_ state: inout State) {
+    let selectedID = state.controlCenterSelection.macID
+    guard !state.pairedMacs.contains(where: { $0.id == selectedID }) else { return }
+    let fallbackID = state.pairedMacs.first?.id
+    state.$controlCenterSelection.withLock { $0.macID = fallbackID }
   }
 
   /// Push the current Mac list to the watch and refresh the widgets so their
@@ -125,6 +142,7 @@ struct LockSenderFeature {
       state.$pairedMacs.withLock { $0.append(newMac) }
       mac = newMac
     }
+    normalizeControlCenterSelection(&state)
     state.status = "Paired with \(mac.displayName) ✓"
     // Say hello so the Mac shows the pairing landed, and push the updated list
     // to the watch.

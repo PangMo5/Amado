@@ -53,8 +53,8 @@ brew install --cask PangMo5/tap/amado
 
 Or download it from [GitHub Releases](https://github.com/PangMo5/Amado/releases).
 Sparkle checks for updates in the background, and **Check for Updates…** is
-available from the menu-bar item. The iPhone, widget, and Watch clients
-currently build from source.
+available from the menu-bar item. The companion iPhone app, widget, and Watch
+app are distributed together through TestFlight.
 
 1. Launch Amado on the Mac and enable **Launch at Login** if wanted.
 2. Open **Settings › Pairing › Reveal pairing code**.

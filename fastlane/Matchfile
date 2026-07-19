@@ -1,0 +1,13 @@
+git_url("git@github.com:PangMo5/apple-signing.git")
+git_branch("main")
+storage_mode("git")
+type("appstore")
+
+app_identifier([
+  "dev.PangMo5.Amado.iOS",
+  "dev.PangMo5.Amado.iOS.watchkitapp",
+  "dev.PangMo5.Amado.iOS.Widget",
+])
+
+clone_branch_directly(true)
+shallow_clone(true)

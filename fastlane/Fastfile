@@ -1,0 +1,395 @@
+require "json"
+
+default_platform(:ios)
+
+IOS_APP_IDENTIFIER = "dev.PangMo5.Amado.iOS"
+IOS_DEVELOPMENT_TEAM = "4BHXT8RHFR"
+DEFAULT_TESTFLIGHT_EXTERNAL_GROUPS = ["External Testers"].freeze
+DEFAULT_TESTFLIGHT_INTERNAL_GROUPS = ["App Store Connect Users"].freeze
+IOS_PROFILE_ENVIRONMENTS = {
+  "dev.PangMo5.Amado.iOS" => "TUIST_IOS_PROVISIONING_PROFILE",
+  "dev.PangMo5.Amado.iOS.watchkitapp" => "TUIST_WATCH_PROVISIONING_PROFILE",
+  "dev.PangMo5.Amado.iOS.Widget" => "TUIST_WIDGET_PROVISIONING_PROFILE",
+}.freeze
+
+def required_environment(name)
+  value = ENV[name].to_s
+  UI.user_error!("Missing required environment variable: #{name}") if value.empty?
+  value
+end
+
+def development_team
+  team_id = required_environment("DEVELOPMENT_TEAM")
+  return team_id if team_id == IOS_DEVELOPMENT_TEAM
+
+  UI.user_error!("DEVELOPMENT_TEAM does not match the Kwangmin Bae personal team")
+end
+
+def changelog_for(version)
+  contents = File.read("CHANGELOG-iOS.md")
+  heading = Regexp.escape(version)
+  entry = contents.match(/^## #{heading} \([^)]+\)\n(?<body>.*?)(?=^## |\z)/m)
+  UI.user_error!("CHANGELOG-iOS.md has no entry for #{version}") unless entry
+
+  notes = entry[:body].strip
+  UI.user_error!("CHANGELOG-iOS.md has empty notes for #{version}") if notes.empty?
+  notes
+end
+
+def validate_project_version(version)
+  project = File.read("Project.swift")
+  project_version = project[/^let iOSVersion = "([^"]+)"$/, 1]
+  UI.user_error!("Project.swift has no iOSVersion") unless project_version
+  return if project_version == version
+
+  UI.user_error!(
+    "Release version #{version} does not match Project.swift iOSVersion #{project_version}",
+  )
+end
+
+def configure_tuist_profiles
+  mapping = lane_context[SharedValues::MATCH_PROVISIONING_PROFILE_MAPPING] || {}
+  missing = IOS_PROFILE_ENVIRONMENTS.keys.reject { |bundle_id| mapping[bundle_id] }
+  unless missing.empty?
+    UI.user_error!("match did not provide profiles for: #{missing.join(', ')}")
+  end
+
+  IOS_PROFILE_ENVIRONMENTS.each do |bundle_id, environment|
+    ENV[environment] = mapping.fetch(bundle_id)
+  end
+end
+
+def external_testflight_groups
+  groups = ENV["TESTFLIGHT_EXTERNAL_GROUPS"].to_s
+    .split(",")
+    .map(&:strip)
+    .reject(&:empty?)
+  groups.empty? ? DEFAULT_TESTFLIGHT_EXTERNAL_GROUPS : groups
+end
+
+def internal_testflight_groups
+  groups = ENV["TESTFLIGHT_INTERNAL_GROUPS"].to_s
+    .split(",")
+    .map(&:strip)
+    .reject(&:empty?)
+  groups.empty? ? DEFAULT_TESTFLIGHT_INTERNAL_GROUPS : groups
+end
+
+def metadata_text(path)
+  File.read(File.join("fastlane", "metadata", path)).strip
+end
+
+def review_contact
+  {
+    first_name: required_environment("APP_REVIEW_CONTACT_FIRST_NAME"),
+    last_name: required_environment("APP_REVIEW_CONTACT_LAST_NAME"),
+    email: required_environment("APP_REVIEW_CONTACT_EMAIL"),
+    phone: required_environment("APP_REVIEW_CONTACT_PHONE"),
+  }
+end
+
+platform :ios do
+  private_lane :connect_api_key do
+    key_options = {
+      key_id: required_environment("AC_API_KEY_ID"),
+      issuer_id: required_environment("AC_API_ISSUER_ID"),
+      duration: 1_200,
+      in_house: false,
+    }
+    key_path = ENV["AC_API_KEY_PATH"].to_s
+    if key_path.empty?
+      key_options[:key_content] = required_environment("AC_API_KEY_P8")
+      key_options[:is_key_content_base64] = false
+    else
+      key_options[:key_filepath] = key_path
+    end
+    app_store_connect_api_key(**key_options)
+  end
+
+  private_lane :sync_app_privacy do
+    privacy_config = JSON.parse(File.read("fastlane/app_privacy_details.json"))
+    app = Spaceship::ConnectAPI::App.find(IOS_APP_IDENTIFIER)
+    UI.user_error!("App Store Connect app not found: #{IOS_APP_IDENTIFIER}") unless app
+
+    usages = Spaceship::ConnectAPI::AppDataUsage.all(
+      app_id: app.id,
+      includes: "category,grouping,purpose,dataProtection",
+      limit: 500,
+    )
+    not_collected = Spaceship::ConnectAPI::AppDataUsageDataProtection::ID::DATA_NOT_COLLECTED
+    desired_not_collected = privacy_config == [{ "data_protections" => [not_collected] }]
+    already_current =
+      desired_not_collected &&
+      usages.one? &&
+      usages.first.data_protection.id == not_collected
+
+    unless already_current
+      usages.each(&:delete!)
+      privacy_config.each do |usage|
+        purposes = usage.fetch("purposes", [])
+        purposes = [nil] if purposes.empty?
+        purposes.each do |purpose|
+          usage.fetch("data_protections").each do |data_protection|
+            Spaceship::ConnectAPI::AppDataUsage.create(
+              app_id: app.id,
+              app_data_usage_category_id: usage["category"],
+              app_data_usage_protection_id: data_protection,
+              app_data_usage_purpose_id: purpose,
+            )
+          end
+        end
+      end
+    end
+
+    publish_state = Spaceship::ConnectAPI::AppDataUsagesPublishState.get(app_id: app.id)
+    publish_state.publish! unless publish_state.published
+  end
+
+  private_lane :sync_metadata do |options|
+    upload_screenshots = options.fetch(:upload_screenshots, false)
+    if upload_screenshots
+      screenshots = Dir.glob("fastlane/screenshots/**/*.{png,jpg,jpeg}", File::FNM_CASEFOLD)
+      UI.user_error!("Add App Store screenshots under fastlane/screenshots") if screenshots.empty?
+    end
+
+    sync_app_privacy
+    upload_to_app_store(
+      api_key: options.fetch(:api_key),
+      app_identifier: IOS_APP_IDENTIFIER,
+      app_version: options.fetch(:version),
+      metadata_path: "fastlane/metadata",
+      app_rating_config_path: "fastlane/metadata/age_rating.json",
+      screenshots_path: "fastlane/screenshots",
+      release_notes: { "en-US" => options.fetch(:release_notes) },
+      price_tier: 0,
+      skip_binary_upload: true,
+      skip_screenshots: !upload_screenshots,
+      overwrite_screenshots: upload_screenshots,
+      submit_for_review: false,
+      force: true,
+    )
+  end
+
+  private_lane :ensure_testflight_groups do |options|
+    app = Spaceship::ConnectAPI::App.find(IOS_APP_IDENTIFIER)
+    UI.user_error!("App Store Connect app not found: #{IOS_APP_IDENTIFIER}") unless app
+
+    existing_names = app.get_beta_groups.map(&:name)
+    options.fetch(:groups).each do |group_name|
+      next if existing_names.include?(group_name)
+
+      group_type = options.fetch(:internal) ? "internal" : "external"
+      UI.message("Creating #{group_type} TestFlight group: #{group_name}")
+      app.create_beta_group(
+        group_name: group_name,
+        is_internal_group: options.fetch(:internal),
+        has_access_to_all_builds: options.fetch(:internal),
+      )
+    end
+  end
+
+  private_lane :build_release do |options|
+    version = options[:version].to_s
+    UI.user_error!("version is required") if version.empty?
+    validate_project_version(version)
+    release_notes = changelog_for(version)
+
+    team_id = development_team
+    keychain_password = required_environment("KEYCHAIN_PASSWORD")
+    api_key = connect_api_key
+
+    if options.fetch(:sync_metadata, true)
+      sync_metadata(
+        api_key: api_key,
+        version: version,
+        release_notes: release_notes,
+      )
+    end
+
+    latest_build = latest_testflight_build_number(
+      api_key: api_key,
+      app_identifier: IOS_APP_IDENTIFIER,
+      version: version,
+      initial_build_number: 0,
+    )
+    build_number = latest_build.to_i + 1
+    ENV["TUIST_BUILD_NUMBER"] = build_number.to_s
+    ENV["TUIST_DEVELOPMENT_TEAM"] = team_id
+
+    keychain_name = "amado-fastlane-#{ENV.fetch('GITHUB_RUN_ID', Process.pid)}"
+    create_keychain(
+      name: keychain_name,
+      password: keychain_password,
+      default_keychain: true,
+      unlock: true,
+      timeout: 3_600,
+      lock_when_sleeps: false,
+      add_to_search_list: true,
+    )
+
+    begin
+      match_options = {
+        type: "appstore",
+        app_identifier: IOS_PROFILE_ENVIRONMENTS.keys,
+        api_key: api_key,
+        readonly: false,
+        generate_apple_certs: true,
+        team_id: team_id,
+        git_full_name: "PangMo5",
+        git_user_email: "PangMo5@users.noreply.github.com",
+        keychain_name: keychain_name,
+        keychain_password: keychain_password,
+        skip_docs: true,
+      }
+      private_key = ENV["MATCH_GIT_PRIVATE_KEY"].to_s
+      match_options[:git_private_key] = private_key unless private_key.empty?
+      match(**match_options)
+
+      configure_tuist_profiles
+      sh("tuist install")
+      sh("tuist generate --no-open")
+
+      profile_mapping = lane_context.fetch(SharedValues::MATCH_PROVISIONING_PROFILE_MAPPING)
+      build_app(
+        workspace: "Amado.xcworkspace",
+        scheme: "AmadoiOS",
+        configuration: "Release",
+        clean: true,
+        export_method: "app-store",
+        export_team_id: team_id,
+        export_options: {
+          signingStyle: "manual",
+          manageAppVersionAndBuildNumber: false,
+          provisioningProfiles: profile_mapping,
+        },
+        output_directory: ENV.fetch("RUNNER_TEMP", "build/fastlane"),
+        output_name: "Amado-iOS.ipa",
+      )
+    ensure
+      delete_keychain(name: keychain_name)
+    end
+
+    {
+      api_key: api_key,
+      build_number: build_number,
+      ipa: lane_context.fetch(SharedValues::IPA_OUTPUT_PATH),
+      release_notes: release_notes,
+      version: version,
+    }
+  end
+
+  desc "Upload App Store Connect metadata without a build"
+  lane :metadata do |options|
+    version = options[:version].to_s
+    UI.user_error!("version is required") if version.empty?
+    validate_project_version(version)
+
+    development_team
+    api_key = connect_api_key
+    sync_metadata(
+      api_key: api_key,
+      version: version,
+      release_notes: changelog_for(version),
+      upload_screenshots: true,
+    )
+  end
+
+  desc "Build and distribute to internal TestFlight testers"
+  lane :internal do |options|
+    groups = internal_testflight_groups
+    release = build_release(version: options[:version])
+    ensure_testflight_groups(groups: groups, internal: true)
+    upload_to_testflight(
+      api_key: release.fetch(:api_key),
+      app_identifier: IOS_APP_IDENTIFIER,
+      ipa: release.fetch(:ipa),
+      changelog: release.fetch(:release_notes),
+      distribute_external: false,
+      groups: groups,
+      submit_beta_review: false,
+      skip_submission: false,
+      skip_waiting_for_build_processing: false,
+      uses_non_exempt_encryption: false,
+    )
+  end
+
+  desc "Build, submit for Beta App Review when needed, and distribute externally"
+  lane :external do |options|
+    groups = external_testflight_groups
+    contact = review_contact
+    release = build_release(version: options[:version])
+    ensure_testflight_groups(groups: groups, internal: false)
+    upload_to_testflight(
+      api_key: release.fetch(:api_key),
+      app_identifier: IOS_APP_IDENTIFIER,
+      ipa: release.fetch(:ipa),
+      changelog: release.fetch(:release_notes),
+      distribute_external: true,
+      groups: groups,
+      notify_external_testers: true,
+      submit_beta_review: true,
+      demo_account_required: false,
+      beta_app_review_info: {
+        contact_first_name: contact.fetch(:first_name),
+        contact_last_name: contact.fetch(:last_name),
+        contact_email: contact.fetch(:email),
+        contact_phone: contact.fetch(:phone),
+        demo_account_required: false,
+        notes: metadata_text("review_information/notes.txt"),
+      },
+      localized_app_info: {
+        "en-US" => {
+          description: metadata_text("en-US/description.txt"),
+          marketing_url: metadata_text("en-US/marketing_url.txt"),
+          privacy_policy_url: metadata_text("en-US/privacy_url.txt"),
+        },
+      },
+      skip_submission: false,
+      skip_waiting_for_build_processing: false,
+      uses_non_exempt_encryption: false,
+    )
+  end
+
+  desc "Build, submit for App Review, and release automatically after approval"
+  lane :app_store do |options|
+    contact = review_contact
+    screenshots = Dir.glob("fastlane/screenshots/**/*.{png,jpg,jpeg}", File::FNM_CASEFOLD)
+    if screenshots.empty?
+      UI.user_error!("Add App Store screenshots under fastlane/screenshots before release")
+    end
+
+    release = build_release(version: options[:version], sync_metadata: false)
+    sync_app_privacy
+    upload_to_app_store(
+      api_key: release.fetch(:api_key),
+      app_identifier: IOS_APP_IDENTIFIER,
+      app_version: release.fetch(:version),
+      ipa: release.fetch(:ipa),
+      metadata_path: "fastlane/metadata",
+      app_rating_config_path: "fastlane/metadata/age_rating.json",
+      screenshots_path: "fastlane/screenshots",
+      release_notes: { "en-US" => release.fetch(:release_notes) },
+      price_tier: 0,
+      app_review_information: {
+        first_name: contact.fetch(:first_name),
+        last_name: contact.fetch(:last_name),
+        email_address: contact.fetch(:email),
+        phone_number: contact.fetch(:phone),
+        notes: metadata_text("review_information/notes.txt"),
+      },
+      skip_binary_upload: false,
+      skip_screenshots: false,
+      overwrite_screenshots: true,
+      submit_for_review: true,
+      automatic_release: true,
+      phased_release: false,
+      submission_information: {
+        add_id_info_uses_idfa: false,
+        content_rights_contains_third_party_content: false,
+        export_compliance_uses_encryption: false,
+      },
+      precheck_include_in_app_purchases: false,
+      force: true,
+    )
+  end
+end

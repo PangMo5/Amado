@@ -95,11 +95,13 @@ private final class WatchPhoneLink: NSObject, WCSessionDelegate, @unchecked Send
 
   func session(
     _ session: WCSession,
-    activationDidCompleteWith _: WCSessionActivationState,
+    activationDidCompleteWith state: WCSessionActivationState,
     error: (any Error)?,
   ) {
     if let error {
       logger.error("activation failed: \(error.localizedDescription, privacy: .public)")
+    } else {
+      logger.notice("activation completed with state \(state.rawValue, privacy: .public)")
     }
     emit(session.receivedApplicationContext)
   }
@@ -113,13 +115,18 @@ private final class WatchPhoneLink: NSObject, WCSessionDelegate, @unchecked Send
   private let continuation: AsyncStream<[WatchMac]>.Continuation
 
   private func emit(_ context: [String: Any]) {
-    guard
-      let data = context[WatchMessage.macsKey] as? Data,
-      let macs = try? JSONDecoder().decode([WatchMac].self, from: data)
-    else { return }
+    guard let data = context[WatchMessage.macsKey] as? Data else {
+      logger.notice("received application context without Macs")
+      return
+    }
+    guard let macs = try? JSONDecoder().decode([WatchMac].self, from: data) else {
+      logger.error("could not decode Macs from application context")
+      return
+    }
+    logger.notice("received \(macs.count, privacy: .public) Macs from iPhone")
     continuation.yield(macs)
   }
 
 }
 
-private let logger = Logger(subsystem: "dev.PangMo5.Amado.watch", category: "PhoneLink")
+private let logger = Logger(subsystem: "dev.PangMo5.Amado.iOS.watchkitapp", category: "PhoneLink")

@@ -7,8 +7,8 @@
   --card-bg: #fff;
   --card-border: rgba(0, 0, 0, 0.06);
   --card-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
-  --accent: #5e5ce6;
-  --accent-hover: #6967ef;
+  --accent: #d56b1d;
+  --accent-hover: #a2521c;
   --nav-bg: rgba(255, 255, 255, 0.72);
   --nav-border: rgba(0, 0, 0, 0.08);
   --pill-bg: rgba(0, 0, 0, 0.05);
@@ -29,8 +29,8 @@
     --card-bg: #1c1c1e;
     --card-border: rgba(255, 255, 255, 0.08);
     --card-shadow: none;
-    --accent: #7d7aff;
-    --accent-hover: #8b89ff;
+    --accent: #ee8e2d;
+    --accent-hover: #f3a84b;
     --nav-bg: rgba(0, 0, 0, 0.7);
     --nav-border: rgba(255, 255, 255, 0.12);
     --pill-bg: rgba(255, 255, 255, 0.08);

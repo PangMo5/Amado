@@ -26,7 +26,7 @@ struct LockWidget: Widget {
 
 struct LockEntry: TimelineEntry {
   let date: Date
-  let mac: MacEntity?
+  let mac: LockWidgetMac?
   /// True only for the WidgetKit placeholder shown while the entry loads, so the
   /// tile can show a spinner instead of stale/blank content.
   var isLoading = false
@@ -40,12 +40,27 @@ struct LockProvider: AppIntentTimelineProvider {
   }
 
   func snapshot(for configuration: SelectMacIntent, in _: Context) async -> LockEntry {
-    LockEntry(date: Date(), mac: configuration.mac)
+    entry(for: configuration)
   }
 
   func timeline(for configuration: SelectMacIntent, in _: Context) async -> Timeline<LockEntry> {
-    Timeline(entries: [LockEntry(date: Date(), mac: configuration.mac)], policy: .never)
+    Timeline(entries: [entry(for: configuration)], policy: .never)
   }
+
+  private func entry(for configuration: SelectMacIntent) -> LockEntry {
+    let mac = configuration.mac
+      .flatMap(UUID.init(uuidString:))
+      .flatMap { id in PairedMacsStore.load().first { $0.id == id } }
+      .map { LockWidgetMac(id: $0.id, name: $0.displayName) }
+    return LockEntry(date: Date(), mac: mac)
+  }
+}
+
+// MARK: - LockWidgetMac
+
+struct LockWidgetMac: Equatable, Sendable {
+  let id: UUID
+  let name: String
 }
 
 // MARK: - LockWidgetView
@@ -63,17 +78,17 @@ struct LockWidgetView: View {
           .progressViewStyle(.circular)
           .frame(maxWidth: .infinity, maxHeight: .infinity)
       } else if let mac = entry.mac {
-        Button(intent: LockMacIntent(mac: mac)) {
+        Button(intent: LockMacIntent(macID: mac.id.uuidString)) {
           tile(name: mac.name, hint: "Tap to lock", glyphTint: true)
         }
         .buttonStyle(.plain)
       } else {
-        tile(name: "Choose a Mac", hint: "Long-press to edit", glyphTint: false)
+        tile(name: "Choose a Mac", hint: "Long-press to choose", glyphTint: false)
       }
     }
     .containerBackground(for: .widget) {
       LinearGradient(
-        colors: [Color.orange.opacity(0.28), Color.orange.opacity(0.05)],
+        colors: [Color("BrandTint").opacity(0.28), Color("BrandTint").opacity(0.05)],
         startPoint: .topLeading,
         endPoint: .bottomTrailing,
       )
@@ -85,7 +100,7 @@ struct LockWidgetView: View {
   private func tile(name: String, hint: String, glyphTint: Bool) -> some View {
     VStack(alignment: .leading, spacing: 0) {
       ZStack {
-        Circle().fill(glyphTint ? AnyShapeStyle(Color.orange.gradient) : AnyShapeStyle(.quaternary))
+        Circle().fill(glyphTint ? AnyShapeStyle(Color("BrandTint").gradient) : AnyShapeStyle(.quaternary))
         Image(systemName: "lock.fill")
           .font(.system(size: 20, weight: .bold))
           .foregroundStyle(glyphTint ? .white : .secondary)

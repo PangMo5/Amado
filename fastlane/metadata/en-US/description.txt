@@ -1,0 +1,21 @@
+Lock your Mac with one tap, or just walk away.
+
+Amado gives you direct lock controls across your Apple devices. When you do not want to tap anything, Bluetooth proximity can lock the Mac automatically after you leave with your iPhone.
+
+ONE TAP, EVERYWHERE
+
+Lock a paired Mac from the iPhone app, Apple Watch, a Home Screen widget, or Control Center. Every surface uses the same saved Macs.
+
+WALK-AWAY AUTO-LOCK
+
+Bluetooth proximity is a primary Amado experience. The Mac watches for your iPhone to leave and locks after a configurable grace period. The iPhone app does not need to remain open.
+
+LOCAL FIRST
+
+Bonjour connects directly on your local network. For access away from home, Amado can use an HTTPS tunnel that you choose and operate. Amado does not require an account or hosted relay service.
+
+SECURE PAIRING
+
+Scan the QR code shown by the Mac app to pair. Lock commands are authenticated with HMAC-SHA256, a fresh timestamp, and a one-time nonce. Amado can lock your Mac. It cannot unlock it.
+
+The free Amado macOS companion app is required. Download it from pangmo5.dev/Amado/ or GitHub.
