@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Existing iOS-v* tag to distribute"
+        description: "iOS-v* version tag; required remotely for binary distribution"
         required: true
         type: string
       distribution:
@@ -41,7 +41,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ inputs.tag || github.ref }}
+          ref: ${{ inputs.distribution == 'metadata' && github.ref || inputs.tag || github.ref }}
 
       - name: Resolve iOS version
         id: version
