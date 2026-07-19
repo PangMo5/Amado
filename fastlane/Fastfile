@@ -4,6 +4,7 @@ default_platform(:ios)
 
 IOS_APP_IDENTIFIER = "dev.PangMo5.Amado.iOS"
 IOS_DEVELOPMENT_TEAM = "4BHXT8RHFR"
+PROJECT_ROOT = File.expand_path("..", __dir__)
 DEFAULT_TESTFLIGHT_EXTERNAL_GROUPS = ["External Testers"].freeze
 DEFAULT_TESTFLIGHT_INTERNAL_GROUPS = ["App Store Connect Users"].freeze
 IOS_PROFILE_ENVIRONMENTS = {
@@ -18,6 +19,10 @@ def required_environment(name)
   value
 end
 
+def project_path(*components)
+  File.join(PROJECT_ROOT, *components)
+end
+
 def development_team
   team_id = required_environment("DEVELOPMENT_TEAM")
   return team_id if team_id == IOS_DEVELOPMENT_TEAM
@@ -26,7 +31,7 @@ def development_team
 end
 
 def changelog_for(version)
-  contents = File.read("CHANGELOG-iOS.md")
+  contents = File.read(project_path("CHANGELOG-iOS.md"))
   heading = Regexp.escape(version)
   entry = contents.match(/^## #{heading} \([^)]+\)\n(?<body>.*?)(?=^## |\z)/m)
   UI.user_error!("CHANGELOG-iOS.md has no entry for #{version}") unless entry
@@ -37,7 +42,7 @@ def changelog_for(version)
 end
 
 def validate_project_version(version)
-  project = File.read("Project.swift")
+  project = File.read(project_path("Project.swift"))
   project_version = project[/^let iOSVersion = "([^"]+)"$/, 1]
   UI.user_error!("Project.swift has no iOSVersion") unless project_version
   return if project_version == version
@@ -76,7 +81,7 @@ def internal_testflight_groups
 end
 
 def metadata_text(path)
-  File.read(File.join("fastlane", "metadata", path)).strip
+  File.read(project_path("fastlane", "metadata", path)).strip
 end
 
 def review_contact
@@ -107,7 +112,7 @@ platform :ios do
   end
 
   private_lane :sync_app_privacy do
-    privacy_config = JSON.parse(File.read("fastlane/app_privacy_details.json"))
+    privacy_config = JSON.parse(File.read(project_path("fastlane", "app_privacy_details.json")))
     app = Spaceship::ConnectAPI::App.find(IOS_APP_IDENTIFIER)
     UI.user_error!("App Store Connect app not found: #{IOS_APP_IDENTIFIER}") unless app
 
@@ -148,7 +153,10 @@ platform :ios do
   private_lane :sync_metadata do |options|
     upload_screenshots = options.fetch(:upload_screenshots, false)
     if upload_screenshots
-      screenshots = Dir.glob("fastlane/screenshots/**/*.{png,jpg,jpeg}", File::FNM_CASEFOLD)
+      screenshots = Dir.glob(
+        project_path("fastlane", "screenshots", "**", "*.{png,jpg,jpeg}"),
+        File::FNM_CASEFOLD,
+      )
       UI.user_error!("Add App Store screenshots under fastlane/screenshots") if screenshots.empty?
     end
 
@@ -157,9 +165,9 @@ platform :ios do
       api_key: options.fetch(:api_key),
       app_identifier: IOS_APP_IDENTIFIER,
       app_version: options.fetch(:version),
-      metadata_path: "fastlane/metadata",
-      app_rating_config_path: "fastlane/metadata/age_rating.json",
-      screenshots_path: "fastlane/screenshots",
+      metadata_path: project_path("fastlane", "metadata"),
+      app_rating_config_path: project_path("fastlane", "metadata", "age_rating.json"),
+      screenshots_path: project_path("fastlane", "screenshots"),
       release_notes: { "en-US" => options.fetch(:release_notes) },
       price_tier: 0,
       skip_binary_upload: true,
@@ -246,12 +254,14 @@ platform :ios do
       match(**match_options)
 
       configure_tuist_profiles
-      sh("tuist install")
-      sh("tuist generate --no-open")
+      Dir.chdir(PROJECT_ROOT) do
+        sh("tuist install")
+        sh("tuist generate --no-open")
+      end
 
       profile_mapping = lane_context.fetch(SharedValues::MATCH_PROVISIONING_PROFILE_MAPPING)
       build_app(
-        workspace: "Amado.xcworkspace",
+        workspace: project_path("Amado.xcworkspace"),
         scheme: "AmadoiOS",
         configuration: "Release",
         clean: true,
@@ -262,7 +272,7 @@ platform :ios do
           manageAppVersionAndBuildNumber: false,
           provisioningProfiles: profile_mapping,
         },
-        output_directory: ENV.fetch("RUNNER_TEMP", "build/fastlane"),
+        output_directory: ENV.fetch("RUNNER_TEMP", project_path("build", "fastlane")),
         output_name: "Amado-iOS.ipa",
       )
     ensure
@@ -353,7 +363,10 @@ platform :ios do
   desc "Build, submit for App Review, and release automatically after approval"
   lane :app_store do |options|
     contact = review_contact
-    screenshots = Dir.glob("fastlane/screenshots/**/*.{png,jpg,jpeg}", File::FNM_CASEFOLD)
+    screenshots = Dir.glob(
+      project_path("fastlane", "screenshots", "**", "*.{png,jpg,jpeg}"),
+      File::FNM_CASEFOLD,
+    )
     if screenshots.empty?
       UI.user_error!("Add App Store screenshots under fastlane/screenshots before release")
     end
@@ -365,9 +378,9 @@ platform :ios do
       app_identifier: IOS_APP_IDENTIFIER,
       app_version: release.fetch(:version),
       ipa: release.fetch(:ipa),
-      metadata_path: "fastlane/metadata",
-      app_rating_config_path: "fastlane/metadata/age_rating.json",
-      screenshots_path: "fastlane/screenshots",
+      metadata_path: project_path("fastlane", "metadata"),
+      app_rating_config_path: project_path("fastlane", "metadata", "age_rating.json"),
+      screenshots_path: project_path("fastlane", "screenshots"),
       release_notes: { "en-US" => release.fetch(:release_notes) },
       price_tier: 0,
       app_review_information: {
