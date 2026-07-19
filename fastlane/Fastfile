@@ -1,5 +1,3 @@
-require "json"
-
 default_platform(:ios)
 
 IOS_APP_IDENTIFIER = "dev.PangMo5.Amado.iOS"
@@ -41,21 +39,9 @@ def verify_account_holder
   UI.user_error!("App Store Connect account holder is not Kwangmin Bae")
 end
 
-def ensure_app_store_app(version)
-  app = Spaceship::ConnectAPI::App.find(IOS_APP_IDENTIFIER)
-  return app if app
-
-  UI.message("Creating App Store Connect app: #{IOS_APP_IDENTIFIER}")
-  Spaceship::ConnectAPI::App.create(
-    name: metadata_text("en-US/name.txt"),
-    version_string: version,
-    sku: IOS_APP_IDENTIFIER,
-    primary_locale: "en-US",
-    bundle_id: IOS_APP_IDENTIFIER,
-    platforms: ["IOS"],
-  )
+def app_store_app
   Spaceship::ConnectAPI::App.find(IOS_APP_IDENTIFIER) ||
-    UI.user_error!("App Store Connect app creation did not return #{IOS_APP_IDENTIFIER}")
+    UI.user_error!("Create #{IOS_APP_IDENTIFIER} on the App Store Connect website first")
 end
 
 def changelog_for(version)
@@ -141,44 +127,6 @@ platform :ios do
     api_key
   end
 
-  private_lane :sync_app_privacy do |options|
-    privacy_config = JSON.parse(File.read(project_path("fastlane", "app_privacy_details.json")))
-    app = ensure_app_store_app(options.fetch(:version))
-
-    usages = Spaceship::ConnectAPI::AppDataUsage.all(
-      app_id: app.id,
-      includes: "category,grouping,purpose,dataProtection",
-      limit: 500,
-    )
-    not_collected = Spaceship::ConnectAPI::AppDataUsageDataProtection::ID::DATA_NOT_COLLECTED
-    desired_not_collected = privacy_config == [{ "data_protections" => [not_collected] }]
-    already_current =
-      desired_not_collected &&
-      usages.one? &&
-      usages.first.data_protection.id == not_collected
-
-    unless already_current
-      usages.each(&:delete!)
-      privacy_config.each do |usage|
-        purposes = usage.fetch("purposes", [])
-        purposes = [nil] if purposes.empty?
-        purposes.each do |purpose|
-          usage.fetch("data_protections").each do |data_protection|
-            Spaceship::ConnectAPI::AppDataUsage.create(
-              app_id: app.id,
-              app_data_usage_category_id: usage["category"],
-              app_data_usage_protection_id: data_protection,
-              app_data_usage_purpose_id: purpose,
-            )
-          end
-        end
-      end
-    end
-
-    publish_state = Spaceship::ConnectAPI::AppDataUsagesPublishState.get(app_id: app.id)
-    publish_state.publish! unless publish_state.published
-  end
-
   private_lane :sync_metadata do |options|
     upload_screenshots = options.fetch(:upload_screenshots, false)
     if upload_screenshots
@@ -189,7 +137,7 @@ platform :ios do
       UI.user_error!("Add App Store screenshots under fastlane/screenshots") if screenshots.empty?
     end
 
-    sync_app_privacy(version: options.fetch(:version))
+    app_store_app
     upload_to_app_store(
       api_key: options.fetch(:api_key),
       app_identifier: IOS_APP_IDENTIFIER,
@@ -401,7 +349,7 @@ platform :ios do
     end
 
     release = build_release(version: options[:version], sync_metadata: false)
-    sync_app_privacy(version: release.fetch(:version))
+    app_store_app
     upload_to_app_store(
       api_key: release.fetch(:api_key),
       app_identifier: IOS_APP_IDENTIFIER,
