@@ -4,6 +4,7 @@ default_platform(:ios)
 
 IOS_APP_IDENTIFIER = "dev.PangMo5.Amado.iOS"
 IOS_DEVELOPMENT_TEAM = "4BHXT8RHFR"
+IOS_ACCOUNT_HOLDER = ["Kwangmin", "Bae"].freeze
 PROJECT_ROOT = File.expand_path("..", __dir__)
 DEFAULT_TESTFLIGHT_EXTERNAL_GROUPS = ["External Testers"].freeze
 DEFAULT_TESTFLIGHT_INTERNAL_GROUPS = ["App Store Connect Users"].freeze
@@ -28,6 +29,33 @@ def development_team
   return team_id if team_id == IOS_DEVELOPMENT_TEAM
 
   UI.user_error!("DEVELOPMENT_TEAM does not match the Kwangmin Bae personal team")
+end
+
+def verify_account_holder
+  account_holder = Spaceship::ConnectAPI::User.all(includes: nil).find do |user|
+    Array(user.roles).include?(Spaceship::ConnectAPI::User::UserRole::ACCOUNT_HOLDER)
+  end
+  actual_name = [account_holder&.first_name, account_holder&.last_name]
+  return UI.success("Verified App Store Connect account holder: Kwangmin Bae") if actual_name == IOS_ACCOUNT_HOLDER
+
+  UI.user_error!("App Store Connect account holder is not Kwangmin Bae")
+end
+
+def ensure_app_store_app(version)
+  app = Spaceship::ConnectAPI::App.find(IOS_APP_IDENTIFIER)
+  return app if app
+
+  UI.message("Creating App Store Connect app: #{IOS_APP_IDENTIFIER}")
+  Spaceship::ConnectAPI::App.create(
+    name: metadata_text("en-US/name.txt"),
+    version_string: version,
+    sku: IOS_APP_IDENTIFIER,
+    primary_locale: "en-US",
+    bundle_id: IOS_APP_IDENTIFIER,
+    platforms: ["IOS"],
+  )
+  Spaceship::ConnectAPI::App.find(IOS_APP_IDENTIFIER) ||
+    UI.user_error!("App Store Connect app creation did not return #{IOS_APP_IDENTIFIER}")
 end
 
 def changelog_for(version)
@@ -108,13 +136,14 @@ platform :ios do
     else
       key_options[:key_filepath] = key_path
     end
-    app_store_connect_api_key(**key_options)
+    api_key = app_store_connect_api_key(**key_options)
+    verify_account_holder
+    api_key
   end
 
-  private_lane :sync_app_privacy do
+  private_lane :sync_app_privacy do |options|
     privacy_config = JSON.parse(File.read(project_path("fastlane", "app_privacy_details.json")))
-    app = Spaceship::ConnectAPI::App.find(IOS_APP_IDENTIFIER)
-    UI.user_error!("App Store Connect app not found: #{IOS_APP_IDENTIFIER}") unless app
+    app = ensure_app_store_app(options.fetch(:version))
 
     usages = Spaceship::ConnectAPI::AppDataUsage.all(
       app_id: app.id,
@@ -160,7 +189,7 @@ platform :ios do
       UI.user_error!("Add App Store screenshots under fastlane/screenshots") if screenshots.empty?
     end
 
-    sync_app_privacy
+    sync_app_privacy(version: options.fetch(:version))
     upload_to_app_store(
       api_key: options.fetch(:api_key),
       app_identifier: IOS_APP_IDENTIFIER,
@@ -372,7 +401,7 @@ platform :ios do
     end
 
     release = build_release(version: options[:version], sync_metadata: false)
-    sync_app_privacy
+    sync_app_privacy(version: release.fetch(:version))
     upload_to_app_store(
       api_key: release.fetch(:api_key),
       app_identifier: IOS_APP_IDENTIFIER,
