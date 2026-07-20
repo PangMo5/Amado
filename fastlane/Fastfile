@@ -181,11 +181,34 @@ platform :ios do
 
       group_type = options.fetch(:internal) ? "internal" : "external"
       UI.message("Creating #{group_type} TestFlight group: #{group_name}")
-      app.create_beta_group(
-        group_name: group_name,
-        is_internal_group: options.fetch(:internal),
-        has_access_to_all_builds: options.fetch(:internal),
-      )
+      if options.fetch(:internal)
+        Spaceship::ConnectAPI.test_flight_request_client.post(
+          "v1/betaGroups",
+          {
+            data: {
+              attributes: {
+                name: group_name,
+                isInternalGroup: true,
+                hasAccessToAllBuilds: true,
+              },
+              relationships: {
+                app: {
+                  data: {
+                    id: app.id,
+                    type: "apps",
+                  },
+                },
+              },
+              type: "betaGroups",
+            },
+          },
+        )
+      else
+        app.create_beta_group(
+          group_name: group_name,
+          is_internal_group: false,
+        )
+      end
     end
   end
 
