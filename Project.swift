@@ -242,6 +242,10 @@ let project = Project(
       // cleanly on all three platforms. TCA/Sharing live on the app targets.
       sources: ["AmadoKit/Sources/**"],
       dependencies: [],
+      settings: .settings(base: [
+        "CODE_SIGNING_ALLOWED": "NO",
+        "CODE_SIGNING_REQUIRED": "NO",
+      ]),
     ),
 
     // MARK: - AmadoTests
