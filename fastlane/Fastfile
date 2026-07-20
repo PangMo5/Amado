@@ -146,7 +146,6 @@ platform :ios do
       app_rating_config_path: project_path("fastlane", "metadata", "age_rating.json"),
       screenshots_path: project_path("fastlane", "screenshots"),
       release_notes: { "en-US" => options.fetch(:release_notes) },
-      price_tier: 0,
       skip_binary_upload: true,
       skip_screenshots: !upload_screenshots,
       overwrite_screenshots: upload_screenshots,
@@ -359,7 +358,6 @@ platform :ios do
       app_rating_config_path: project_path("fastlane", "metadata", "age_rating.json"),
       screenshots_path: project_path("fastlane", "screenshots"),
       release_notes: { "en-US" => release.fetch(:release_notes) },
-      price_tier: 0,
       app_review_information: {
         first_name: contact.fetch(:first_name),
         last_name: contact.fetch(:last_name),
