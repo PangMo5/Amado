@@ -331,7 +331,6 @@ platform :ios do
       ipa: release.fetch(:ipa),
       changelog: release.fetch(:release_notes),
       distribute_external: false,
-      groups: groups,
       submit_beta_review: false,
       skip_submission: false,
       skip_waiting_for_build_processing: false,
