@@ -340,14 +340,33 @@ platform :ios do
 
   desc "Build, submit for Beta App Review when needed, and distribute externally"
   lane :external do |options|
+    version = options[:version].to_s
+    build_number = options[:build_number].to_s
     groups = external_testflight_groups
     contact = review_contact
-    release = build_release(version: options[:version])
+
+    if build_number.empty?
+      release = build_release(version: version)
+    else
+      validate_project_version(version)
+      api_key = connect_api_key
+      release_notes = changelog_for(version)
+      sync_metadata(
+        api_key: api_key,
+        version: version,
+        release_notes: release_notes,
+        upload_screenshots: false,
+      )
+      release = {
+        api_key: api_key,
+        release_notes: release_notes,
+      }
+    end
+
     ensure_testflight_groups(groups: groups, internal: false)
-    upload_to_testflight(
+    distribution_options = {
       api_key: release.fetch(:api_key),
       app_identifier: IOS_APP_IDENTIFIER,
-      ipa: release.fetch(:ipa),
       changelog: release.fetch(:release_notes),
       distribute_external: true,
       groups: groups,
@@ -365,14 +384,32 @@ platform :ios do
       localized_app_info: {
         "en-US" => {
           description: metadata_text("en-US/description.txt"),
+          feedback_email: contact.fetch(:email),
           marketing_url: metadata_text("en-US/marketing_url.txt"),
           privacy_policy_url: metadata_text("en-US/privacy_url.txt"),
+        },
+      },
+      localized_build_info: {
+        "en-US" => {
+          whats_new: release.fetch(:release_notes),
         },
       },
       skip_submission: false,
       skip_waiting_for_build_processing: false,
       uses_non_exempt_encryption: false,
-    )
+    }
+
+    if build_number.empty?
+      distribution_options[:ipa] = release.fetch(:ipa)
+    else
+      distribution_options.merge!(
+        distribute_only: true,
+        app_version: version,
+        build_number: build_number,
+      )
+    end
+
+    upload_to_testflight(**distribution_options)
   end
 
   desc "Build, submit for App Review, and release automatically after approval"

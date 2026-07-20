@@ -20,6 +20,10 @@ on:
           - external
           - app_store
           - metadata
+      build_number:
+        description: "Existing TestFlight build number to reuse for external distribution"
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -42,7 +46,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ inputs.distribution == 'metadata' && github.ref || inputs.tag || github.ref }}
+          ref: ${{ (inputs.distribution == 'metadata' || inputs.build_number != '') && github.ref || inputs.tag || github.ref }}
 
       - name: Resolve iOS version
         id: version
@@ -190,10 +194,11 @@ jobs:
           DEVELOPMENT_TEAM: ${{ secrets.DEVELOPMENT_TEAM }}
           KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
           MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          BUILD_NUMBER: ${{ inputs.build_number }}
           DISTRIBUTION: ${{ inputs.distribution || 'internal' }}
           TESTFLIGHT_EXTERNAL_GROUPS: ${{ vars.TESTFLIGHT_EXTERNAL_GROUPS }}
           TESTFLIGHT_INTERNAL_GROUPS: ${{ vars.TESTFLIGHT_INTERNAL_GROUPS }}
-        run: bundle exec fastlane ios "$DISTRIBUTION" version:${{ steps.version.outputs.version }}
+        run: bundle exec fastlane ios "$DISTRIBUTION" version:${{ steps.version.outputs.version }} build_number:"$BUILD_NUMBER"
 
       - name: Remove private key files
         if: ${{ always() }}
