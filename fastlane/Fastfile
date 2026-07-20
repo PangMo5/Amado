@@ -166,6 +166,7 @@ platform :ios do
       skip_screenshots: !upload_screenshots,
       overwrite_screenshots: upload_screenshots,
       submit_for_review: false,
+      precheck_include_in_app_purchases: false,
       force: true,
     )
   end
