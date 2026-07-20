@@ -150,6 +150,35 @@ jobs:
             echo "MATCH_GIT_PRIVATE_KEY=$MATCH_GIT_PRIVATE_KEY_PATH" >> "$GITHUB_ENV"
           fi
 
+      - name: Ensure signing app identifiers
+        if: ${{ inputs.distribution != 'metadata' }}
+        env:
+          AC_API_ISSUER_ID: ${{ secrets.AC_API_ISSUER_ID }}
+          AC_API_KEY_ID: ${{ secrets.AC_API_KEY_ID }}
+        run: |
+          bundle exec ruby <<'RUBY'
+          require "spaceship"
+
+          Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.create(
+            key_id: ENV.fetch("AC_API_KEY_ID"),
+            issuer_id: ENV.fetch("AC_API_ISSUER_ID"),
+            filepath: ENV.fetch("AC_API_KEY_PATH"),
+            duration: 1_200,
+            in_house: false,
+          )
+
+          identifier = "dev.PangMo5.Amado.iOS.watchkitapp"
+          unless Spaceship::ConnectAPI::BundleId.find(identifier)
+            Spaceship::ConnectAPI::BundleId.create(
+              name: "Amado Watch App",
+              platform: "IOS",
+              identifier: identifier,
+              seed_id: nil,
+            )
+            puts "Created Apple Developer App ID: #{identifier}"
+          end
+          RUBY
+
       - name: Run Fastlane distribution
         env:
           AC_API_ISSUER_ID: ${{ secrets.AC_API_ISSUER_ID }}
