@@ -36,6 +36,7 @@ jobs:
       CI: "true"
       FASTLANE_HIDE_CHANGELOG: "true"
       FASTLANE_SKIP_UPDATE_CHECK: "true"
+      FASTLANE_ENABLE_BETA_DELIVER_SYNC_SCREENSHOTS: "true"
       LANG: en_US.UTF-8
       LC_ALL: en_US.UTF-8
     steps:
