@@ -367,6 +367,7 @@ platform :ios do
     distribution_options = {
       api_key: release.fetch(:api_key),
       app_identifier: IOS_APP_IDENTIFIER,
+      platform: "ios",
       changelog: release.fetch(:release_notes),
       distribute_external: true,
       groups: groups,
