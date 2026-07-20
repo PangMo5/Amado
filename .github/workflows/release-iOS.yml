@@ -123,6 +123,9 @@ jobs:
             exit 1
           fi
 
+      - uses: jdx/mise-action@v4
+        if: ${{ inputs.distribution != 'metadata' }}
+
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: "4.0"
@@ -146,9 +149,6 @@ jobs:
             printf '%s\n' "$MATCH_GIT_PRIVATE_KEY" > "$MATCH_GIT_PRIVATE_KEY_PATH"
             echo "MATCH_GIT_PRIVATE_KEY=$MATCH_GIT_PRIVATE_KEY_PATH" >> "$GITHUB_ENV"
           fi
-
-      - uses: jdx/mise-action@v4
-        if: ${{ inputs.distribution != 'metadata' }}
 
       - name: Run Fastlane distribution
         env:
