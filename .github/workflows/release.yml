@@ -261,8 +261,9 @@ jobs:
             echo ""
             echo "## Install / Update"
             echo ""
-            echo "- Direct: [Amado-${VERSION}.dmg](https://github.com/${REPO}/releases/download/${TAG}/Amado-${VERSION}.dmg)"
-            echo "- In-app: Sparkle will pick this up on its next check."
+            echo '- **Homebrew:** `brew upgrade --cask amado`'
+            echo "- **Direct:** [Amado-${VERSION}.dmg](https://github.com/${REPO}/releases/download/${TAG}/Amado-${VERSION}.dmg)"
+            echo "- **In-app:** Sparkle will pick this up on its next check."
           } >> "$NOTES"
 
       - name: Publish GitHub release
