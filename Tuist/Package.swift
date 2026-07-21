@@ -2,7 +2,7 @@
 import PackageDescription
 
 #if TUIST
-import struct ProjectDescription.PackageSettings
+import ProjectDescription
 
 /// Default to static linking: each dependency links into the target that uses
 /// it, so nothing ships as an embedded dynamic framework — fast launch across
@@ -10,7 +10,23 @@ import struct ProjectDescription.PackageSettings
 /// xcframework and is linked (dynamically) only by the macOS agent. Mirrors
 /// the sibling Tatami project.
 let packageSettings = PackageSettings(
-  productTypes: [:]
+  productTypes: [:],
+  targetSettings: [
+    // Swift 6.3 whole-module compilation crashes while NIOPosix constructs a
+    // ManagedAtomic for BaseSocketChannel on macOS 27. Keep Release
+    // optimization, and remove these overrides after the dependencies or the
+    // compiler resolve it.
+    "Atomics": .settings(configurations: [
+      .release(name: "Release", settings: [
+        "SWIFT_COMPILATION_MODE": "singlefile"
+      ])
+    ]),
+    "NIOPosix": .settings(configurations: [
+      .release(name: "Release", settings: [
+        "SWIFT_COMPILATION_MODE": "singlefile"
+      ])
+    ]),
+  ],
 )
 #endif
 

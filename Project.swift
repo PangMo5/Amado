@@ -6,7 +6,7 @@ let bundleIdPrefix = "dev.PangMo5"
 // (TUIST_DEVELOPMENT_TEAM, …); in CI they come from repository secrets.
 let developmentTeam = Environment.developmentTeam.getString(default: "")
 let sparklePublicEDKey = Environment.sparklePublicEdKey.getString(default: "")
-let macOSVersion = "0.1.0"
+let macOSVersion = "0.1.1"
 let iOSVersion = "0.1.0"
 // Release workflows inject the build number. Local builds use 1.
 let buildNumber = Environment.buildNumber.getString(default: "1")
