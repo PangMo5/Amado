@@ -3,6 +3,17 @@
 Notable changes to the Amado macOS app are documented here. Versions follow
 semantic versioning, and the newest release appears first.
 
+## 1.0.2 (2026-07-27)
+
+- **Fixed nearby false locks:** Smart detection no longer lets momentarily
+  stronger Bluetooth readings tighten the learned nearby reference. Confirmed
+  nearby samples now maintain a bounded, conservative rolling baseline that can
+  only make the departure threshold safer without learning a gradual departure
+  as nearby.
+- **Stable departure confirmation:** Fast readings still make a clear departure
+  react promptly, but the stable filter must also approach or cross the learned
+  threshold before a normal fade or signal loss can trigger a lock.
+
 ## 1.0.1 (2026-07-27)
 
 - **Safer, faster Smart auto-lock:** Smart detection now combines fast and

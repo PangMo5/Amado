@@ -25,19 +25,26 @@ Smart mode learns the selected iPhone's normal nearby signal instead of relying
 on one fixed RSSI threshold. It combines:
 
 - a fast three-sample median and a stable exponentially weighted filter;
-- a learned nearby baseline and an adaptive far threshold;
+- a conservative rolling nearby baseline and an adaptive far threshold;
 - weak-signal consistency, signal direction, and adaptive confirmation;
 - separate handling for a weakening signal and a sudden Bluetooth signal loss;
 - hysteresis and a stable-return period before another lock can occur.
 
+Momentarily stronger readings cannot tighten the nearby reference. While the
+iPhone is independently confirmed nearby, the rolling reference may only move
+within a bounded range in the more conservative direction. The bound prevents a
+slow departure from being learned indefinitely. A recalibration is required to
+intentionally adopt a stronger normal placement.
+
 When the fast and stable filters, weak-signal consistency, and departure trend
-agree, Smart mode locks without waiting for the full confirmation period.
-Ambiguous borderline evidence waits longer. Keyboard, pointer, and trackpad
-activity is never treated as proof that the owner is present, so another person
-using the Mac cannot delay auto-lock or teach a departing signal as the new
-nearby baseline. If a previously healthy signal disappears abruptly, Smart mode
-waits longer before treating the loss as departure, but input activity cannot
-extend that cap.
+agree, Smart mode locks without waiting for the full confirmation period. Fast
+readings can raise confidence, but the stable filter must also reach the learned
+departure threshold before normal confirmation begins. Ambiguous borderline
+evidence waits longer. Keyboard, pointer, and trackpad activity is never treated
+as proof that the owner is present, so another person using the Mac cannot delay
+auto-lock or teach a departing signal as the new nearby baseline. If a
+previously healthy signal disappears abruptly, Smart mode waits longer before
+treating the loss as departure, but input activity cannot extend that cap.
 
 Choose a sensitivity preset based on the tradeoff you want:
 

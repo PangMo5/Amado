@@ -57,6 +57,67 @@ struct ProximityDecisionEngineTests {
   }
 
   @Test
+  func `Strong nearby peaks do not turn normal nearby fading into departure`() {
+    var result = makeArmedSmartEngine(nearbyRSSI: -52)
+
+    #expect(result.engine.currentSnapshot.learnedNearRSSI == -52)
+    #expect(result.engine.currentSnapshot.farThresholdRSSI == -66)
+
+    for _ in 0 ..< 90 {
+      #expect(result.engine.ingest(rssi: -38, at: result.time).lockReason == nil)
+      result.time += 1
+    }
+
+    #expect(result.engine.currentSnapshot.learnedNearRSSI == -52)
+    #expect(result.engine.currentSnapshot.farThresholdRSSI == -66)
+
+    let nearbyFade = [-48, -52, -55, -57, -53, -55, -53, -55, -52, -50, -45, -42]
+    for rssi in nearbyFade {
+      #expect(result.engine.ingest(rssi: rssi, at: result.time).lockReason == nil)
+      result.time += 1
+    }
+
+    #expect(result.engine.currentSnapshot.phase == .near)
+    let signalLoss = result.engine.signalLost(at: result.time + 30)
+    #expect(signalLoss.lockReason == nil)
+  }
+
+  @Test
+  func `Strong initial readings cannot create an unsafe Smart threshold`() {
+    var result = makeArmedSmartEngine(nearbyRSSI: -38)
+
+    #expect(result.engine.currentSnapshot.learnedNearRSSI == -45)
+    #expect(result.engine.currentSnapshot.farThresholdRSSI == -59)
+
+    for _ in 0 ..< 90 {
+      #expect(result.engine.ingest(rssi: -53, at: result.time).lockReason == nil)
+      result.time += 1
+    }
+
+    #expect(result.engine.currentSnapshot.phase == .near)
+    #expect(result.engine.currentSnapshot.learnedNearRSSI == -49)
+    #expect(result.engine.currentSnapshot.farThresholdRSSI == -63)
+  }
+
+  @Test
+  func `Gradual departure cannot be learned as nearby indefinitely`() {
+    var result = makeArmedSmartEngine(nearbyRSSI: -52)
+    var lockReason: ProximityDecisionEngine.LockReason?
+
+    for rssi in stride(from: -53, through: -85, by: -1) {
+      for _ in 0 ..< 24 {
+        let evaluation = result.engine.ingest(rssi: rssi, at: result.time)
+        lockReason = lockReason ?? evaluation.lockReason
+        result.time += 1
+      }
+    }
+
+    #expect(lockReason != nil)
+    #expect(result.engine.currentSnapshot.learnedNearRSSI == -56)
+    #expect(result.engine.currentSnapshot.farThresholdRSSI == -70)
+  }
+
+  @Test
   func `Smart mode locks quickly when independent evidence agrees`() {
     var result = makeArmedSmartEngine()
     var lockReason: ProximityDecisionEngine.LockReason?
@@ -222,14 +283,15 @@ struct ProximityDecisionEngineTests {
   // MARK: Private
 
   private func makeArmedSmartEngine(
-    sensitivity: ProximitySensitivity = .balanced
+    sensitivity: ProximitySensitivity = .balanced,
+    nearbyRSSI: Int = -45,
   ) -> (engine: ProximityDecisionEngine, time: TimeInterval) {
     var engine = ProximityDecisionEngine(
       configuration: .init(mode: .smart, sensitivity: sensitivity)
     )
     var time: TimeInterval = 0
     for _ in 0 ..< 12 {
-      _ = engine.ingest(rssi: -45, at: time)
+      _ = engine.ingest(rssi: nearbyRSSI, at: time)
       time += 1
     }
     return (engine, time)

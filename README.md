@@ -25,7 +25,9 @@ automatically.
   Mac's current status on demand.
 - **Automatic when you leave:** Bluetooth proximity lets the Mac lock itself
   when you walk away with your iPhone. Smart detection is the default; Manual
-  mode keeps direct RSSI, delay, and smoothing controls.
+  mode keeps direct RSSI, delay, and smoothing controls. Smart keeps a
+  conservative rolling nearby reference so a momentarily stronger reading
+  cannot make ordinary desk-range fading look like departure.
 - **Fast on your LAN:** Bonjour discovery and a direct authenticated command,
   with no account or hosted service.
 - **Remote when you choose:** Bring your own HTTPS tunnel. Amado never proxies

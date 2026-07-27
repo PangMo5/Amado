@@ -57,7 +57,10 @@ Existing configuration files that do not contain `proximity_mode` use Smart
 mode automatically. Auto-lock itself remains opt-in and is not enabled by this
 default. The learned nearby baseline is runtime-only: **Recalibrate nearby
 signal** discards it and starts a fresh learning window without changing
-`config.toml`.
+`config.toml`. During normal monitoring, confirmed nearby samples can only move
+the learned reference within a bounded range in a more conservative direction.
+Momentarily stronger readings cannot tighten the departure threshold, and a
+gradual departure cannot move the reference indefinitely.
 
 ## Reload behavior
 

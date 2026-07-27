@@ -173,11 +173,18 @@ public struct ProximityDecisionEngine: Sendable {
       let isVeryWeak = lastFilteredRSSI.map { value in
         threshold.map { value < $0 - parameters.veryWeakGap } ?? false
       } ?? false
+      let stableSignalApproachedThreshold = lastFilteredRSSI.map { value in
+        threshold.map { value < $0 + 2 } ?? false
+      } ?? false
       let hadDepartureEvidence =
         phase == .suspectedAway
-          || lastDepartureConfidence >= Self.meaningfulDepartureConfidence
-          || (lastFilteredRSSI.map { value in threshold.map { value < $0 + 2 } ?? false } ?? false)
-          || (currentSlope.map { $0 <= parameters.departureSlope } ?? false)
+          || (
+            stableSignalApproachedThreshold
+              && (
+                lastDepartureConfidence >= Self.meaningfulDepartureConfidence
+                  || (currentSlope.map { $0 <= parameters.departureSlope } ?? false)
+              )
+          )
 
       if hadDepartureEvidence || isVeryWeak {
         return latch(
@@ -236,6 +243,7 @@ public struct ProximityDecisionEngine: Sendable {
     filteredHistory.removeAll()
     smartEWMA = nil
     initialSmartSamples.removeAll()
+    nearbyReferenceSamples.removeAll()
     suspectedSince = nil
     nearCandidateSince = nil
     signalLostSince = nil
@@ -245,6 +253,7 @@ public struct ProximityDecisionEngine: Sendable {
     pendingConfirmationSeconds = nil
     lastLockReason = nil
     if clearLearnedBaseline {
+      calibratedNearRSSI = nil
       learnedNearRSSI = nil
     }
   }
@@ -272,6 +281,11 @@ public struct ProximityDecisionEngine: Sendable {
   private static let highDepartureConfidence = 0.85
   private static let meaningfulDepartureConfidence = 0.5
   private static let minimumAdaptiveConfirmationSeconds: TimeInterval = 0.75
+  private static let nearbyReferenceWindow = 21
+  private static let maximumNearbyReferenceDrift = 4.0
+  /// A momentarily excellent RSSI must not tighten the departure threshold.
+  /// `-45 dBm` is already unambiguously nearby across supported presets.
+  private static let strongestTrustedNearRSSI = -45.0
 
   private let configuration: Configuration
   private var phase = Phase.learning
@@ -280,6 +294,8 @@ public struct ProximityDecisionEngine: Sendable {
   private var filteredHistory = [TimedRSSI]()
   private var smartEWMA: Double?
   private var initialSmartSamples = [Double]()
+  private var nearbyReferenceSamples = [Double]()
+  private var calibratedNearRSSI: Double?
   private var learnedNearRSSI: Double?
   private var suspectedSince: TimeInterval?
   private var nearCandidateSince: TimeInterval?
@@ -301,7 +317,10 @@ public struct ProximityDecisionEngine: Sendable {
   }
 
   private var smartFarThreshold: Double? {
-    learnedNearRSSI.map { $0 - configuration.sensitivity.parameters.farMargin }
+    learnedNearRSSI.map {
+      min($0, Self.strongestTrustedNearRSSI)
+        - configuration.sensitivity.parameters.farMargin
+    }
   }
 
   private var confirmationSeconds: TimeInterval {
@@ -390,12 +409,10 @@ public struct ProximityDecisionEngine: Sendable {
         + (0.2 * trend)
         + (0.15 * weakConsistency)
     )
-    let declining = slope <= parameters.departureSlope
-    let hasFastConsensus =
-      fastSamples.count == Self.fastMedianWindow
-        && fastRSSI < threshold
-        && weakConsistency >= 0.6
-    let isDepartureCandidate = filteredRSSI < threshold || (hasFastConsensus && declining)
+    // Fast samples contribute to confidence, but ordinary departure timing
+    // starts only after the stable filter also crosses the threshold. This
+    // prevents a normal near-field fade from becoming a false departure.
+    let isDepartureCandidate = filteredRSSI < threshold
     let isDecisive =
       rawRSSI < threshold - parameters.veryWeakGap
         && fastRSSI < threshold - parameters.veryWeakGap
@@ -416,7 +433,7 @@ public struct ProximityDecisionEngine: Sendable {
   ) -> Evaluation {
     let parameters = configuration.sensitivity.parameters
 
-    learnNearbyReference(rssi)
+    learnInitialNearbyReference(rssi)
     guard let threshold = smartFarThreshold else {
       phase = .learning
       return Evaluation(
@@ -428,6 +445,7 @@ public struct ProximityDecisionEngine: Sendable {
     let returnThreshold = threshold + parameters.returnGap
     if phase == .awayLatched {
       if rssi >= returnThreshold {
+        refineNearbyReference(rssi)
         nearCandidateSince = nearCandidateSince ?? timestamp
         if timestamp - (nearCandidateSince ?? timestamp) >= parameters.rearmSeconds {
           phase = .near
@@ -446,6 +464,7 @@ public struct ProximityDecisionEngine: Sendable {
 
     if !armed || phase == .learning {
       if rssi >= returnThreshold {
+        refineNearbyReference(rssi)
         nearCandidateSince = nearCandidateSince ?? timestamp
         if timestamp - (nearCandidateSince ?? timestamp) >= parameters.rearmSeconds {
           phase = .near
@@ -477,6 +496,7 @@ public struct ProximityDecisionEngine: Sendable {
     lastDepartureConfidence = evidence.confidence
 
     if evidence.isNear {
+      refineNearbyReference(rssi)
       phase = .near
       suspectedSince = nil
       pendingConfirmationSeconds = nil
@@ -512,30 +532,51 @@ public struct ProximityDecisionEngine: Sendable {
     )
   }
 
-  private mutating func learnNearbyReference(_ rssi: Double) {
-    guard phase != .suspectedAway, phase != .awayLatched else { return }
+  private mutating func learnInitialNearbyReference(_ rssi: Double) {
+    guard learnedNearRSSI == nil else { return }
 
-    if learnedNearRSSI == nil {
-      initialSmartSamples.append(rssi)
-      if initialSmartSamples.count > Self.medianWindow {
-        initialSmartSamples.removeFirst(initialSmartSamples.count - Self.medianWindow)
-      }
-      if initialSmartSamples.count == Self.medianWindow {
-        learnedNearRSSI = Self.median(initialSmartSamples)
-      }
-      return
+    initialSmartSamples.append(rssi)
+    if initialSmartSamples.count > Self.medianWindow {
+      initialSmartSamples.removeFirst(initialSmartSamples.count - Self.medianWindow)
     }
+    guard initialSmartSamples.count == Self.medianWindow else { return }
 
-    // Only independently strong Bluetooth evidence may refine the learned
-    // nearby baseline. Keyboard or pointer activity is intentionally excluded:
-    // input does not prove that the owner and their iPhone are still present.
-    let parameters = configuration.sensitivity.parameters
+    let calibratedReference = min(
+      Self.median(initialSmartSamples),
+      Self.strongestTrustedNearRSSI,
+    )
+    calibratedNearRSSI = calibratedReference
+    learnedNearRSSI = calibratedReference
+    nearbyReferenceSamples = initialSmartSamples
+  }
+
+  /// Refines the nearby reference only from independently confirmed Bluetooth
+  /// proximity. Strong peaks may remain in the rolling window, but they cannot
+  /// tighten a previously safe threshold; weaker stable-near observations can
+  /// make it more conservative. Recalibration is the explicit way to request a
+  /// tighter reference after the phone's normal placement changes.
+  private mutating func refineNearbyReference(_ rssi: Double) {
     guard
-      let threshold = smartFarThreshold,
-      rssi >= threshold + parameters.returnGap
+      let calibratedNearRSSI,
+      let learnedNearRSSI
     else { return }
-    let alpha = rssi >= (learnedNearRSSI ?? rssi) ? 0.25 : 0.02
-    learnedNearRSSI = ((1 - alpha) * (learnedNearRSSI ?? rssi)) + (alpha * rssi)
+
+    nearbyReferenceSamples.append(rssi)
+    if nearbyReferenceSamples.count > Self.nearbyReferenceWindow {
+      nearbyReferenceSamples.removeFirst(
+        nearbyReferenceSamples.count - Self.nearbyReferenceWindow
+      )
+    }
+    let robustReference = min(
+      Self.median(nearbyReferenceSamples),
+      Self.strongestTrustedNearRSSI,
+    )
+    let weakestAllowedReference =
+      calibratedNearRSSI - Self.maximumNearbyReferenceDrift
+    self.learnedNearRSSI = min(
+      learnedNearRSSI,
+      max(robustReference, weakestAllowedReference),
+    )
   }
 
   private mutating func evaluateManual(
