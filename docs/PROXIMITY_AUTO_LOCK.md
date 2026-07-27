@@ -24,17 +24,20 @@ remains off until you enable it.
 Smart mode learns the selected iPhone's normal nearby signal instead of relying
 on one fixed RSSI threshold. It combines:
 
-- median and exponentially weighted filtering to reject brief signal spikes;
+- a fast three-sample median and a stable exponentially weighted filter;
 - a learned nearby baseline and an adaptive far threshold;
-- signal direction and sustained confirmation before deciding you left;
-- recent keyboard, pointer, and trackpad activity to avoid a borderline lock
-  while the Mac is clearly in use;
+- weak-signal consistency, signal direction, and adaptive confirmation;
 - separate handling for a weakening signal and a sudden Bluetooth signal loss;
 - hysteresis and a stable-return period before another lock can occur.
 
-Recent input only delays an ambiguous, borderline decision. A sustained very
-weak signal can still lock the Mac. If a previously healthy signal disappears
-abruptly, Smart mode waits longer before treating the loss as departure.
+When the fast and stable filters, weak-signal consistency, and departure trend
+agree, Smart mode locks without waiting for the full confirmation period.
+Ambiguous borderline evidence waits longer. Keyboard, pointer, and trackpad
+activity is never treated as proof that the owner is present, so another person
+using the Mac cannot delay auto-lock or teach a departing signal as the new
+nearby baseline. If a previously healthy signal disappears abruptly, Smart mode
+waits longer before treating the loss as departure, but input activity cannot
+extend that cap.
 
 Choose a sensitivity preset based on the tradeoff you want:
 

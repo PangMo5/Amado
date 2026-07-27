@@ -102,8 +102,7 @@ public struct ProximityDecisionEngine: Sendable {
     public let learnedNearRSSI: Int?
     public let farThresholdRSSI: Int?
     public let slope: Double?
-    public let idleSeconds: TimeInterval
-    public let isActivitySuppressed: Bool
+    public let departureConfidence: Double
     public let secondsUntilLock: Int?
     public let lockReason: LockReason?
   }
@@ -115,7 +114,7 @@ public struct ProximityDecisionEngine: Sendable {
 
   /// The most recent state without adding an observation.
   public var currentSnapshot: Snapshot {
-    snapshot(at: lastSampleAt ?? 0, idleSeconds: lastIdleSeconds)
+    snapshot(at: lastSampleAt ?? 0)
   }
 
   /// Adds one RSSI observation. Invalid Core Bluetooth sentinel values are
@@ -123,19 +122,16 @@ public struct ProximityDecisionEngine: Sendable {
   public mutating func ingest(
     rssi: Int,
     at timestamp: TimeInterval,
-    idleSeconds: TimeInterval,
   ) -> Evaluation {
-    lastIdleSeconds = max(0, idleSeconds)
     guard (-110 ... -1).contains(rssi) else {
       return Evaluation(
-        snapshot: snapshot(at: timestamp, idleSeconds: lastIdleSeconds),
+        snapshot: snapshot(at: timestamp),
         lockReason: nil,
       )
     }
 
     lastSampleAt = timestamp
     signalLostSince = nil
-    activitySuppressed = false
 
     let filtered = filter(rssi)
     lastFilteredRSSI = filtered
@@ -143,25 +139,23 @@ public struct ProximityDecisionEngine: Sendable {
 
     switch configuration.mode {
     case .smart:
-      return evaluateSmart(filtered, at: timestamp, idleSeconds: lastIdleSeconds)
+      return evaluateSmart(filtered, rawRSSI: Double(rssi), at: timestamp)
     case .manual:
-      return evaluateManual(filtered, at: timestamp, idleSeconds: lastIdleSeconds)
+      return evaluateManual(filtered, at: timestamp)
     }
   }
 
   /// Evaluates a Bluetooth-on signal gap. Call after the normal 30-second
   /// freshness window and periodically afterward until a sample returns.
   public mutating func signalLost(
-    at timestamp: TimeInterval,
-    idleSeconds: TimeInterval,
+    at timestamp: TimeInterval
   ) -> Evaluation {
-    lastIdleSeconds = max(0, idleSeconds)
     signalLostSince = signalLostSince ?? lastSampleAt ?? timestamp
 
     guard armed, phase != .awayLatched else {
       phase = phase == .awayLatched ? .awayLatched : .signalLost
       return Evaluation(
-        snapshot: snapshot(at: timestamp, idleSeconds: lastIdleSeconds),
+        snapshot: snapshot(at: timestamp),
         lockReason: nil,
       )
     }
@@ -171,7 +165,6 @@ public struct ProximityDecisionEngine: Sendable {
       return latch(
         reason: .manualSignalLoss,
         at: timestamp,
-        idleSeconds: lastIdleSeconds,
       )
 
     case .smart:
@@ -182,31 +175,28 @@ public struct ProximityDecisionEngine: Sendable {
       } ?? false
       let hadDepartureEvidence =
         phase == .suspectedAway
+          || lastDepartureConfidence >= Self.meaningfulDepartureConfidence
           || (lastFilteredRSSI.map { value in threshold.map { value < $0 + 2 } ?? false } ?? false)
           || (currentSlope.map { $0 <= parameters.departureSlope } ?? false)
-      let recentlyActive = lastIdleSeconds < parameters.activeInputSeconds
 
-      if hadDepartureEvidence, !recentlyActive || isVeryWeak {
+      if hadDepartureEvidence || isVeryWeak {
         return latch(
           reason: .signalLostAfterWeakening,
           at: timestamp,
-          idleSeconds: lastIdleSeconds,
         )
       }
 
       phase = .signalLost
-      activitySuppressed = recentlyActive
       let lostFor = timestamp - (signalLostSince ?? timestamp)
-      if lostFor >= Self.extendedSignalLossSeconds, lastIdleSeconds >= Self.extendedSignalLossIdleSeconds {
+      if lostFor >= Self.extendedSignalLossSeconds {
         return latch(
           reason: .extendedSignalLoss,
           at: timestamp,
-          idleSeconds: lastIdleSeconds,
         )
       }
 
       return Evaluation(
-        snapshot: snapshot(at: timestamp, idleSeconds: lastIdleSeconds),
+        snapshot: snapshot(at: timestamp),
         lockReason: nil,
       )
     }
@@ -216,10 +206,8 @@ public struct ProximityDecisionEngine: Sendable {
   /// RSSI callback. This preserves Manual mode's wall-clock delay when a weak
   /// reading is immediately followed by radio silence.
   public mutating func advanceTime(
-    to timestamp: TimeInterval,
-    idleSeconds: TimeInterval,
+    to timestamp: TimeInterval
   ) -> Evaluation {
-    lastIdleSeconds = max(0, idleSeconds)
     guard
       configuration.mode == .manual,
       armed,
@@ -228,14 +216,13 @@ public struct ProximityDecisionEngine: Sendable {
       timestamp - suspectedSince >= configuration.manualGraceSeconds
     else {
       return Evaluation(
-        snapshot: snapshot(at: timestamp, idleSeconds: lastIdleSeconds),
+        snapshot: snapshot(at: timestamp),
         lockReason: nil,
       )
     }
     return latch(
       reason: .manualThreshold,
       at: timestamp,
-      idleSeconds: lastIdleSeconds,
     )
   }
 
@@ -254,8 +241,8 @@ public struct ProximityDecisionEngine: Sendable {
     signalLostSince = nil
     lastSampleAt = nil
     lastFilteredRSSI = nil
-    lastIdleSeconds = 0
-    activitySuppressed = false
+    lastDepartureConfidence = 0
+    pendingConfirmationSeconds = nil
     lastLockReason = nil
     if clearLearnedBaseline {
       learnedNearRSSI = nil
@@ -269,12 +256,22 @@ public struct ProximityDecisionEngine: Sendable {
     let value: Double
   }
 
+  private struct DepartureEvidence {
+    let confidence: Double
+    let isNear: Bool
+    let isDepartureCandidate: Bool
+    let isDecisive: Bool
+  }
+
   private static let medianWindow = 5
   private static let trendWindowSeconds: TimeInterval = 8
   private static let smartEWMAAlpha = 0.4
   private static let extendedSignalLossSeconds: TimeInterval = 90
-  private static let extendedSignalLossIdleSeconds: TimeInterval = 15
   private static let manualHysteresisGap = 6.0
+  private static let fastMedianWindow = 3
+  private static let highDepartureConfidence = 0.85
+  private static let meaningfulDepartureConfidence = 0.5
+  private static let minimumAdaptiveConfirmationSeconds: TimeInterval = 0.75
 
   private let configuration: Configuration
   private var phase = Phase.learning
@@ -289,8 +286,8 @@ public struct ProximityDecisionEngine: Sendable {
   private var signalLostSince: TimeInterval?
   private var lastSampleAt: TimeInterval?
   private var lastFilteredRSSI: Double?
-  private var lastIdleSeconds: TimeInterval = 0
-  private var activitySuppressed = false
+  private var lastDepartureConfidence = 0.0
+  private var pendingConfirmationSeconds: TimeInterval?
   private var lastLockReason: LockReason?
 
   private var currentSlope: Double? {
@@ -307,6 +304,15 @@ public struct ProximityDecisionEngine: Sendable {
     learnedNearRSSI.map { $0 - configuration.sensitivity.parameters.farMargin }
   }
 
+  private var confirmationSeconds: TimeInterval {
+    switch configuration.mode {
+    case .manual:
+      configuration.manualGraceSeconds
+    case .smart:
+      pendingConfirmationSeconds ?? configuration.sensitivity.parameters.confirmationSeconds
+    }
+  }
+
   private static func median(_ values: [Double]) -> Double {
     let sorted = values.sorted()
     let middle = sorted.count / 2
@@ -314,6 +320,20 @@ public struct ProximityDecisionEngine: Sendable {
       return (sorted[middle - 1] + sorted[middle]) / 2
     }
     return sorted[middle]
+  }
+
+  private static func clamp(_ value: Double) -> Double {
+    min(1, max(0, value))
+  }
+
+  private static func adaptiveConfirmationSeconds(
+    base: TimeInterval,
+    confidence: Double,
+  ) -> TimeInterval {
+    max(
+      minimumAdaptiveConfirmationSeconds,
+      base * (1 - (0.75 * clamp(confidence))),
+    )
   }
 
   private mutating func filter(_ rssi: Int) -> Double {
@@ -345,18 +365,62 @@ public struct ProximityDecisionEngine: Sendable {
     filteredHistory.removeAll { $0.at < cutoff }
   }
 
+  private func departureEvidence(
+    filteredRSSI: Double,
+    rawRSSI: Double,
+    threshold: Double,
+    parameters: ProximitySensitivity.Parameters,
+  ) -> DepartureEvidence {
+    let fastSamples = rawWindow.suffix(Self.fastMedianWindow).map(Double.init)
+    let fastRSSI = Self.median(fastSamples)
+    let returnThreshold = threshold + parameters.returnGap
+    let evidenceRange = parameters.returnGap + parameters.veryWeakGap
+    let fastLevel = Self.clamp((returnThreshold - fastRSSI) / evidenceRange)
+    let filteredLevel = Self.clamp((returnThreshold - filteredRSSI) / evidenceRange)
+    let weakConsistency =
+      Double(rawWindow.count { Double($0) < threshold })
+        / Double(max(1, rawWindow.count))
+    let slope = currentSlope ?? 0
+    let trend = Self.clamp(
+      max(0, -slope) / max(0.1, abs(parameters.departureSlope) * 3)
+    )
+    let confidence = Self.clamp(
+      (0.4 * fastLevel)
+        + (0.25 * filteredLevel)
+        + (0.2 * trend)
+        + (0.15 * weakConsistency)
+    )
+    let declining = slope <= parameters.departureSlope
+    let hasFastConsensus =
+      fastSamples.count == Self.fastMedianWindow
+        && fastRSSI < threshold
+        && weakConsistency >= 0.6
+    let isDepartureCandidate = filteredRSSI < threshold || (hasFastConsensus && declining)
+    let isDecisive =
+      rawRSSI < threshold - parameters.veryWeakGap
+        && fastRSSI < threshold - parameters.veryWeakGap
+        && weakConsistency >= 0.6
+
+    return DepartureEvidence(
+      confidence: confidence,
+      isNear: fastRSSI >= returnThreshold && filteredRSSI >= returnThreshold,
+      isDepartureCandidate: isDepartureCandidate,
+      isDecisive: isDecisive,
+    )
+  }
+
   private mutating func evaluateSmart(
     _ rssi: Double,
+    rawRSSI: Double,
     at timestamp: TimeInterval,
-    idleSeconds: TimeInterval,
   ) -> Evaluation {
     let parameters = configuration.sensitivity.parameters
 
-    learnNearbyReference(rssi, idleSeconds: idleSeconds)
+    learnNearbyReference(rssi)
     guard let threshold = smartFarThreshold else {
       phase = .learning
       return Evaluation(
-        snapshot: snapshot(at: timestamp, idleSeconds: idleSeconds),
+        snapshot: snapshot(at: timestamp),
         lockReason: nil,
       )
     }
@@ -375,7 +439,7 @@ public struct ProximityDecisionEngine: Sendable {
         nearCandidateSince = nil
       }
       return Evaluation(
-        snapshot: snapshot(at: timestamp, idleSeconds: idleSeconds),
+        snapshot: snapshot(at: timestamp),
         lockReason: nil,
       )
     }
@@ -395,7 +459,7 @@ public struct ProximityDecisionEngine: Sendable {
         phase = .learning
       }
       return Evaluation(
-        snapshot: snapshot(at: timestamp, idleSeconds: idleSeconds),
+        snapshot: snapshot(at: timestamp),
         lockReason: nil,
       )
     }
@@ -404,49 +468,51 @@ public struct ProximityDecisionEngine: Sendable {
       phase = .near
     }
 
-    let slope = currentSlope
-    let weak = rssi < threshold
-    let veryWeak = rssi < threshold - parameters.veryWeakGap
-    let declining = slope.map { $0 <= parameters.departureSlope } ?? false
-    let recentlyActive = idleSeconds < parameters.activeInputSeconds
+    let evidence = departureEvidence(
+      filteredRSSI: rssi,
+      rawRSSI: rawRSSI,
+      threshold: threshold,
+      parameters: parameters,
+    )
+    lastDepartureConfidence = evidence.confidence
 
-    if phase == .suspectedAway {
-      if rssi >= returnThreshold {
-        phase = .near
-        suspectedSince = nil
-      } else if recentlyActive, !veryWeak {
-        phase = .near
-        suspectedSince = nil
-        activitySuppressed = true
-      } else {
-        let confirmation = parameters.confirmationSeconds * (recentlyActive ? 1.5 : 1)
-        if timestamp - (suspectedSince ?? timestamp) >= confirmation {
-          return latch(
-            reason: veryWeak ? .veryWeakSignal : .weakSignalTrend,
-            at: timestamp,
-            idleSeconds: idleSeconds,
-          )
-        }
-      }
-    } else if weak, declining || veryWeak {
-      if recentlyActive, !veryWeak {
-        activitySuppressed = true
-      } else {
+    if evidence.isNear {
+      phase = .near
+      suspectedSince = nil
+      pendingConfirmationSeconds = nil
+      lastDepartureConfidence = 0
+    } else if evidence.isDepartureCandidate {
+      if phase != .suspectedAway {
         phase = .suspectedAway
         suspectedSince = timestamp
+      }
+      let confirmation = Self.adaptiveConfirmationSeconds(
+        base: parameters.confirmationSeconds,
+        confidence: evidence.confidence,
+      )
+      pendingConfirmationSeconds = confirmation
+      if
+        evidence.confidence >= Self.highDepartureConfidence
+        || timestamp - (suspectedSince ?? timestamp) >= confirmation
+      {
+        return latch(
+          reason: evidence.isDecisive ? .veryWeakSignal : .weakSignalTrend,
+          at: timestamp,
+        )
       }
     } else {
       phase = .near
       suspectedSince = nil
+      pendingConfirmationSeconds = nil
     }
 
     return Evaluation(
-      snapshot: snapshot(at: timestamp, idleSeconds: idleSeconds),
+      snapshot: snapshot(at: timestamp),
       lockReason: nil,
     )
   }
 
-  private mutating func learnNearbyReference(_ rssi: Double, idleSeconds: TimeInterval) {
+  private mutating func learnNearbyReference(_ rssi: Double) {
     guard phase != .suspectedAway, phase != .awayLatched else { return }
 
     if learnedNearRSSI == nil {
@@ -460,11 +526,14 @@ public struct ProximityDecisionEngine: Sendable {
       return
     }
 
-    // Recent hardware input labels the current situation as "the user is at
-    // this Mac." Follow stronger readings quickly, but let weaker readings
-    // lower the baseline only very slowly so a departure can't teach itself as
-    // the new normal.
-    guard idleSeconds < configuration.sensitivity.parameters.learningInputSeconds else { return }
+    // Only independently strong Bluetooth evidence may refine the learned
+    // nearby baseline. Keyboard or pointer activity is intentionally excluded:
+    // input does not prove that the owner and their iPhone are still present.
+    let parameters = configuration.sensitivity.parameters
+    guard
+      let threshold = smartFarThreshold,
+      rssi >= threshold + parameters.returnGap
+    else { return }
     let alpha = rssi >= (learnedNearRSSI ?? rssi) ? 0.25 : 0.02
     learnedNearRSSI = ((1 - alpha) * (learnedNearRSSI ?? rssi)) + (alpha * rssi)
   }
@@ -472,7 +541,6 @@ public struct ProximityDecisionEngine: Sendable {
   private mutating func evaluateManual(
     _ rssi: Double,
     at timestamp: TimeInterval,
-    idleSeconds: TimeInterval,
   ) -> Evaluation {
     let threshold = Double(configuration.manualFarRSSI)
     let returnThreshold = threshold + Self.manualHysteresisGap
@@ -484,7 +552,7 @@ public struct ProximityDecisionEngine: Sendable {
         lastLockReason = nil
       }
       return Evaluation(
-        snapshot: snapshot(at: timestamp, idleSeconds: idleSeconds),
+        snapshot: snapshot(at: timestamp),
         lockReason: nil,
       )
     }
@@ -505,13 +573,12 @@ public struct ProximityDecisionEngine: Sendable {
         return latch(
           reason: .manualThreshold,
           at: timestamp,
-          idleSeconds: idleSeconds,
         )
       }
     }
 
     return Evaluation(
-      snapshot: snapshot(at: timestamp, idleSeconds: idleSeconds),
+      snapshot: snapshot(at: timestamp),
       lockReason: nil,
     )
   }
@@ -519,23 +586,21 @@ public struct ProximityDecisionEngine: Sendable {
   private mutating func latch(
     reason: LockReason,
     at timestamp: TimeInterval,
-    idleSeconds: TimeInterval,
   ) -> Evaluation {
     phase = .awayLatched
     armed = false
     suspectedSince = nil
     nearCandidateSince = nil
-    activitySuppressed = false
+    pendingConfirmationSeconds = nil
     lastLockReason = reason
     return Evaluation(
-      snapshot: snapshot(at: timestamp, idleSeconds: idleSeconds),
+      snapshot: snapshot(at: timestamp),
       lockReason: reason,
     )
   }
 
   private func snapshot(
-    at timestamp: TimeInterval,
-    idleSeconds: TimeInterval,
+    at timestamp: TimeInterval
   ) -> Snapshot {
     let threshold = configuration.mode == .smart
       ? smartFarThreshold
@@ -549,7 +614,7 @@ public struct ProximityDecisionEngine: Sendable {
           ceil(
             max(
               0,
-              confirmationSeconds(idleSeconds: idleSeconds) - (timestamp - suspectedSince),
+              confirmationSeconds - (timestamp - suspectedSince),
             )
           )
         )
@@ -563,21 +628,10 @@ public struct ProximityDecisionEngine: Sendable {
       learnedNearRSSI: learnedNearRSSI.map { Int($0.rounded()) },
       farThresholdRSSI: threshold.map { Int($0.rounded()) },
       slope: currentSlope,
-      idleSeconds: idleSeconds,
-      isActivitySuppressed: activitySuppressed,
+      departureConfidence: lastDepartureConfidence,
       secondsUntilLock: secondsUntilLock,
       lockReason: lastLockReason,
     )
-  }
-
-  private func confirmationSeconds(idleSeconds: TimeInterval) -> TimeInterval {
-    switch configuration.mode {
-    case .manual:
-      return configuration.manualGraceSeconds
-    case .smart:
-      let parameters = configuration.sensitivity.parameters
-      return parameters.confirmationSeconds * (idleSeconds < parameters.activeInputSeconds ? 1.5 : 1)
-    }
   }
 
 }
@@ -590,8 +644,6 @@ extension ProximitySensitivity {
     let departureSlope: Double
     let returnGap: Double
     let veryWeakGap: Double
-    let activeInputSeconds: TimeInterval
-    let learningInputSeconds: TimeInterval
   }
 
   fileprivate var parameters: Parameters {
@@ -604,8 +656,6 @@ extension ProximitySensitivity {
         departureSlope: -0.8,
         returnGap: 6,
         veryWeakGap: 10,
-        activeInputSeconds: 4,
-        learningInputSeconds: 8,
       )
 
     case .balanced:
@@ -616,8 +666,6 @@ extension ProximitySensitivity {
         departureSlope: -0.6,
         returnGap: 6,
         veryWeakGap: 9,
-        activeInputSeconds: 3,
-        learningInputSeconds: 7,
       )
 
     case .fast:
@@ -628,8 +676,6 @@ extension ProximitySensitivity {
         departureSlope: -0.4,
         returnGap: 5,
         veryWeakGap: 8,
-        activeInputSeconds: 2,
-        learningInputSeconds: 6,
       )
     }
   }

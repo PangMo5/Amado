@@ -388,14 +388,14 @@ private struct ProximitySettingsPane: View {
       } footer: {
         if store.config.proximityMode == .smart {
           Text(
-            "Smart mode learns the nearby signal, rejects brief spikes, follows the departure trend, "
-              + "and avoids borderline locks while this Mac is in use. Recalibrate with the iPhone nearby "
-              + "after moving the Mac or changing where you normally keep the phone."
+            "Smart mode combines fast and stable signal filters, weak-signal consistency, departure trend, "
+              + "and duration. Keyboard or pointer input cannot delay locking. Recalibrate with the iPhone "
+              + "nearby after moving the Mac or changing where you normally keep the phone."
           )
         } else {
           Text(
             "Manual mode locks when the moving average remains weaker than your threshold for the selected "
-              + "delay. It does not adapt to the room or recent Mac activity."
+              + "delay. It does not adapt to the room."
           )
         }
       }
@@ -462,8 +462,7 @@ private struct ProximitySettingsPane: View {
   private var adaptiveThresholdLine: String {
     switch store.proximityStatus {
     case .near(_, let threshold),
-         .leaving(_, let threshold, _),
-         .pausedByActivity(_, let threshold):
+         .leaving(_, let threshold, _):
       "\(threshold) dBm"
     case .learning:
       "Learning…"
@@ -482,7 +481,6 @@ private struct ProximitySettingsPane: View {
     case .near(let rssi, _): "Nearby · \(rssi) dBm"
     case .leaving(let rssi, _, let remaining):
       remaining.map { "Possible departure · \(rssi) dBm · \($0)s" } ?? "Possible departure · \(rssi) dBm"
-    case .pausedByActivity(let rssi, _): "Weak signal, but this Mac is in use · \(rssi) dBm"
     case .reacquiring: "Reacquiring after Bluetooth or sleep…"
     case .away: "Left — locked"
     case .signalLost: "Signal lost — waiting for confirmation"

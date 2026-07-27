@@ -6,9 +6,11 @@ semantic versioning, and the newest release appears first.
 ## 1.0.0 (2026-07-27)
 
 - **Smarter walk-away locking:** Smart detection is now the default and learns
-  the nearby signal, rejects brief RSSI spikes, considers departure trends and
-  recent Mac activity, handles signal loss conservatively, and safely rearms
-  after a stable return.
+  the nearby signal. It combines fast and stable filters, weak-signal
+  consistency, departure trend, and adaptive confirmation so clear departures
+  lock quickly while brief RSSI spikes remain ignored. Keyboard and pointer
+  activity cannot delay locking or influence learning. Signal loss remains
+  conservative and safely rearms after a stable return.
 - **Manual controls preserved:** Switch to Manual detection to keep direct
   control over the RSSI threshold, delay, and smoothing window.
 - **Calibration and diagnostics:** Choose Conservative, Balanced, or Fast

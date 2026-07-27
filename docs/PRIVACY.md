@@ -40,11 +40,10 @@ secret.
 ## Bluetooth proximity
 
 Bluetooth proximity auto-lock runs on the Mac. The Mac observes the selected
-iPhone's Bluetooth signal to decide when to lock. In Smart mode, it also checks
-how long the Mac has been idle to avoid an ambiguous lock during recent
-keyboard, pointer, or trackpad use. Amado does not capture input content, use
-location services, collect a location history, persist proximity observations,
-or send Bluetooth or input-activity observations to PangMo5.
+iPhone's Bluetooth signal to decide when to lock. Keyboard, pointer, and
+trackpad activity is not observed or used by proximity auto-lock. Amado does
+not use location services, collect a location history, persist proximity
+observations, or send Bluetooth observations to PangMo5.
 
 ## Camera
 

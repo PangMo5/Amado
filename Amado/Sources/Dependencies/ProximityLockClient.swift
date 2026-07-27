@@ -1,7 +1,6 @@
 import AmadoKit
 import AppKit
 import CoreBluetooth
-import CoreGraphics
 import Dependencies
 import DependenciesMacros
 import Foundation
@@ -28,7 +27,6 @@ enum ProximityStatus: Equatable, Sendable {
   case learning(rssi: Int?)
   case near(rssi: Int, threshold: Int)
   case leaving(rssi: Int, threshold: Int, secondsRemaining: Int?)
-  case pausedByActivity(rssi: Int, threshold: Int)
   case reacquiring
   case away(reason: ProximityDecisionEngine.LockReason)
   case signalLost
@@ -259,7 +257,6 @@ private final class ProximityEngine: NSObject, CBCentralManagerDelegate, CBPerip
   private static let rssiPollSeconds: TimeInterval = 1
   private static let activeStallSeconds: TimeInterval = 10
   private static let discoveredTTL: TimeInterval = 5 // drop picker entries not seen recently
-  private static let anyInputEvent = CGEventType(rawValue: UInt32.max)!
 
   private let queue = DispatchQueue(label: "dev.PangMo5.Amado.proximityLock")
   private var central: CBCentralManager?
@@ -278,8 +275,6 @@ private final class ProximityEngine: NSObject, CBCentralManagerDelegate, CBPerip
   private var lastReadAt = Date.distantPast
   private var lastStatus: ProximityStatus?
   private var lastLoggedPhase: ProximityDecisionEngine.Phase?
-  private var lastLoggedSuppression = false
-
   private let discoveredCont: AsyncStream<[DiscoveredDevice]>.Continuation
   private let farCont: AsyncStream<ProximityDecisionEngine.LockReason>.Continuation
   private let statusCont: AsyncStream<ProximityStatus>.Continuation
@@ -290,19 +285,11 @@ private final class ProximityEngine: NSObject, CBCentralManagerDelegate, CBPerip
     return (stream, continuation)
   }
 
-  private static func userIdleSeconds() -> TimeInterval {
-    CGEventSource.secondsSinceLastEventType(
-      .hidSystemState,
-      eventType: anyInputEvent,
-    )
-  }
-
   private func ingest(_ rssi: Int) {
     guard (-110 ... -1).contains(rssi), !suspended else { return }
     let evaluation = decisionEngine.ingest(
       rssi: rssi,
       at: ProcessInfo.processInfo.systemUptime,
-      idleSeconds: Self.userIdleSeconds(),
     )
     apply(evaluation)
     scheduleSignalCheck(after: Self.signalTimeout)
@@ -318,8 +305,7 @@ private final class ProximityEngine: NSObject, CBCentralManagerDelegate, CBPerip
         central?.state == .poweredOn
       else { return }
       let evaluation = decisionEngine.signalLost(
-        at: ProcessInfo.processInfo.systemUptime,
-        idleSeconds: Self.userIdleSeconds(),
+        at: ProcessInfo.processInfo.systemUptime
       )
       apply(evaluation)
       if evaluation.lockReason == nil {
@@ -336,12 +322,10 @@ private final class ProximityEngine: NSObject, CBCentralManagerDelegate, CBPerip
     scheduleManualDecisionCheck(for: snapshot)
     if
       snapshot.phase != lastLoggedPhase
-      || snapshot.isActivitySuppressed != lastLoggedSuppression
       || evaluation.lockReason != nil
     {
       loggerSnapshot(snapshot, event: evaluation.lockReason?.rawValue ?? "state")
       lastLoggedPhase = snapshot.phase
-      lastLoggedSuppression = snapshot.isActivitySuppressed
     }
     if let reason = evaluation.lockReason {
       fireLock(reason: reason)
@@ -360,8 +344,7 @@ private final class ProximityEngine: NSObject, CBCentralManagerDelegate, CBPerip
     let work = DispatchWorkItem { [weak self] in
       guard let self, monitoredID != nil, !suspended else { return }
       let evaluation = decisionEngine.advanceTime(
-        to: ProcessInfo.processInfo.systemUptime,
-        idleSeconds: Self.userIdleSeconds(),
+        to: ProcessInfo.processInfo.systemUptime
       )
       apply(evaluation)
     }
@@ -378,13 +361,7 @@ private final class ProximityEngine: NSObject, CBCentralManagerDelegate, CBPerip
       .learning(rssi: snapshot.rssi)
 
     case .near:
-      if
-        snapshot.isActivitySuppressed,
-        let rssi = snapshot.rssi,
-        let threshold = snapshot.farThresholdRSSI
-      {
-        .pausedByActivity(rssi: rssi, threshold: threshold)
-      } else if let rssi = snapshot.rssi, let threshold = snapshot.farThresholdRSSI {
+      if let rssi = snapshot.rssi, let threshold = snapshot.farThresholdRSSI {
         .near(rssi: rssi, threshold: threshold)
       } else {
         .searching
@@ -418,8 +395,7 @@ private final class ProximityEngine: NSObject, CBCentralManagerDelegate, CBPerip
       proximity: event=\(event, privacy: .public) phase=\(snapshot.phase.rawValue, privacy: .public) \
       rssi=\(snapshot.rssi ?? 0) baseline=\(snapshot.learnedNearRSSI ?? 0) \
       threshold=\(snapshot.farThresholdRSSI ?? 0) slope=\(snapshot.slope ?? 0, format: .fixed(precision: 2)) \
-      idle=\(snapshot.idleSeconds, format: .fixed(precision: 1)) \
-      suppressed=\(snapshot.isActivitySuppressed)
+      confidence=\(snapshot.departureConfidence, format: .fixed(precision: 2))
       """
     )
   }
@@ -502,7 +478,6 @@ private final class ProximityEngine: NSObject, CBCentralManagerDelegate, CBPerip
     if let central, let peripheral = monitoredPeripheral { central.cancelPeripheralConnection(peripheral) }
     monitoredPeripheral = nil
     lastLoggedPhase = nil
-    lastLoggedSuppression = false
   }
 
   @objc
