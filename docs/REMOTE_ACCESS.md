@@ -8,6 +8,11 @@ cannot be reached locally.
 This extends Amado's one-tap controls beyond the LAN. Walk-away auto-lock is a
 separate, equally central path that runs locally on the Mac.
 
+Lock and status requests use authenticated responses. A lock request waits
+briefly for macOS to report the locked session before returning `locked`; if
+that transition cannot be observed in time, the client reports that the
+request was sent without claiming confirmation.
+
 Enter only the hostname in **Amado › Settings › Remote access**, then choose
 **Test connection**. The matching `config.toml` key is documented in the
 [configuration reference](CONFIGURATION.md).

@@ -1,3 +1,5 @@
+import AmadoKit
+import AppKit
 import CoreBluetooth
 import CoreGraphics
 import Dependencies
@@ -23,10 +25,34 @@ enum ProximityStatus: Equatable, Sendable {
   case disabled
   case waitingForBluetooth
   case searching
-  case near(rssi: Int)
-  case leaving(rssi: Int)
-  case away
+  case learning(rssi: Int?)
+  case near(rssi: Int, threshold: Int)
+  case leaving(rssi: Int, threshold: Int, secondsRemaining: Int?)
+  case pausedByActivity(rssi: Int, threshold: Int)
+  case reacquiring
+  case away(reason: ProximityDecisionEngine.LockReason)
   case signalLost
+}
+
+// MARK: - ProximityMonitorConfiguration
+
+struct ProximityMonitorConfiguration: Equatable, Sendable {
+  let deviceID: UUID?
+  let mode: ProximityDetectionMode
+  let sensitivity: ProximitySensitivity
+  let manualFarRSSI: Int
+  let manualGraceSeconds: TimeInterval
+  let manualSmoothing: Int
+
+  var decisionConfiguration: ProximityDecisionEngine.Configuration {
+    ProximityDecisionEngine.Configuration(
+      mode: mode,
+      sensitivity: sensitivity,
+      manualFarRSSI: manualFarRSSI,
+      manualGraceSeconds: manualGraceSeconds,
+      manualSmoothing: manualSmoothing,
+    )
+  }
 }
 
 // MARK: - ProximityLockClient
@@ -40,19 +66,19 @@ enum ProximityStatus: Equatable, Sendable {
 /// unlock, no stored password.
 @DependencyClient
 struct ProximityLockClient: Sendable {
-  /// Start/refresh monitoring the selected device. Resets the state machine
-  /// (presence assumed near, so no spurious lock at start). `deviceID == nil`
-  /// stops monitoring. `farRSSI` = dBm at/below which — smoothed, sustained for
-  /// `grace` — the Mac counts as "left". Idempotent.
-  var monitor: @Sendable (_ deviceID: UUID?, _ farRSSI: Int, _ grace: TimeInterval, _ smoothing: Int) -> Void
+  /// Start or refresh monitoring. A nil `deviceID` stops it.
+  var monitor: @Sendable (_ configuration: ProximityMonitorConfiguration) -> Void
+  /// Clear smart mode's learned nearby baseline and require stable nearby
+  /// observations before re-arming.
+  var recalibrate: @Sendable () -> Void
   /// Enter scan mode so `discovered()` lists nearby named devices for the picker.
   var startScanning: @Sendable () -> Void
   /// Leave scan mode (monitoring, if any, continues).
   var stopScanning: @Sendable () -> Void
   /// Nearby named devices, newest snapshot, sorted by RSSI desc.
   var discovered: @Sendable () -> AsyncStream<[DiscoveredDevice]> = { AsyncStream { _ in } }
-  /// One `()` each time the monitored device is confirmed gone → reducer locks.
-  var farEvents: @Sendable () -> AsyncStream<Void> = { AsyncStream { _ in } }
+  /// One reason each time the monitored device is confirmed gone.
+  var farEvents: @Sendable () -> AsyncStream<ProximityDecisionEngine.LockReason> = { AsyncStream { _ in } }
   /// Live status of the monitored device, for the Settings status line.
   var status: @Sendable () -> AsyncStream<ProximityStatus> = { AsyncStream { _ in } }
 }
@@ -63,9 +89,8 @@ extension ProximityLockClient: DependencyKey {
   static let liveValue: ProximityLockClient = {
     let engine = ProximityEngine()
     return ProximityLockClient(
-      monitor: { id, far, grace, smoothing in
-        engine.setMonitor(deviceID: id, farRSSI: far, grace: grace, smoothing: smoothing)
-      },
+      monitor: { engine.setMonitor($0) },
+      recalibrate: { engine.recalibrate() },
       startScanning: { engine.setScanMode(true) },
       stopScanning: { engine.setScanMode(false) },
       discovered: { engine.discoveredStream },
@@ -75,7 +100,8 @@ extension ProximityLockClient: DependencyKey {
   }()
 
   static let testValue = ProximityLockClient(
-    monitor: { _, _, _, _ in },
+    monitor: { _ in },
+    recalibrate: { },
     startScanning: { },
     stopScanning: { },
     discovered: { AsyncStream { _ in } },
@@ -106,25 +132,50 @@ private final class ProximityEngine: NSObject, CBCentralManagerDelegate, CBPerip
     (farStream, farCont) = Self.makeStream()
     (statusStream, statusCont) = Self.makeStream()
     super.init()
+    let workspaceCenter = NSWorkspace.shared.notificationCenter
+    workspaceCenter.addObserver(
+      self,
+      selector: #selector(workspaceWillSleep),
+      name: NSWorkspace.willSleepNotification,
+      object: nil,
+    )
+    workspaceCenter.addObserver(
+      self,
+      selector: #selector(workspaceDidWake),
+      name: NSWorkspace.didWakeNotification,
+      object: nil,
+    )
+  }
+
+  deinit {
+    NSWorkspace.shared.notificationCenter.removeObserver(self)
   }
 
   // MARK: Internal
 
   let discoveredStream: AsyncStream<[DiscoveredDevice]>
-  let farStream: AsyncStream<Void>
+  let farStream: AsyncStream<ProximityDecisionEngine.LockReason>
   let statusStream: AsyncStream<ProximityStatus>
 
-  func setMonitor(deviceID: UUID?, farRSSI: Int, grace: TimeInterval, smoothing: Int) {
+  func setMonitor(_ configuration: ProximityMonitorConfiguration) {
     queue.async {
-      self.monitoredID = deviceID
-      self.farRSSI = farRSSI
-      self.grace = grace
-      self.smoothingWindow = max(1, smoothing)
-      self.resetStateMachine()
+      self.monitoredID = configuration.deviceID
+      self.monitorMode = configuration.mode
+      self.decisionEngine = ProximityDecisionEngine(configuration: configuration.decisionConfiguration)
+      self.resetConnectionState(clearLearnedBaseline: false)
       self.ensureManager()
       self.reacquireMonitored()
       self.applyScan()
-      self.emitStatus(deviceID == nil ? .disabled : .searching)
+      self.emitStatus(configuration.deviceID == nil ? .disabled : .searching)
+    }
+  }
+
+  func recalibrate() {
+    queue.async {
+      guard self.monitoredID != nil else { return }
+      self.decisionEngine.reset(clearLearnedBaseline: true)
+      self.emitStatus(.learning(rssi: nil))
+      self.loggerSnapshot(self.decisionEngine.currentSnapshot, event: "recalibrated")
     }
   }
 
@@ -139,12 +190,13 @@ private final class ProximityEngine: NSObject, CBCentralManagerDelegate, CBPerip
 
   func centralManagerDidUpdateState(_ central: CBCentralManager) {
     if central.state == .poweredOn {
+      suspended = false
+      decisionEngine.reset(clearLearnedBaseline: false)
       reacquireMonitored()
       applyScan()
-      // Clear a stale .waitingForBluetooth once the radio is back; a reading
-      // will move it to .near/.leaving shortly if the device is around.
-      emitStatus(monitoredID == nil ? .disabled : .searching)
+      emitStatus(monitoredID == nil ? .disabled : .reacquiring)
     } else {
+      resetConnectionState(clearLearnedBaseline: false)
       emitStatus(.waitingForBluetooth)
     }
   }
@@ -155,9 +207,9 @@ private final class ProximityEngine: NSObject, CBCentralManagerDelegate, CBPerip
     advertisementData: [String: Any],
     rssi RSSI: NSNumber,
   ) {
-    let rssi = RSSI.intValue > 0 ? 0 : RSSI.intValue // clamp bogus positives
+    let rssi = RSSI.intValue
 
-    if scanMode {
+    if scanMode, (-110 ... -1).contains(rssi) {
       let name = (advertisementData[CBAdvertisementDataLocalNameKey] as? String) ?? peripheral.name
       if let name, !name.isEmpty {
         seen[peripheral.identifier] = (DiscoveredDevice(id: peripheral.identifier, name: name, rssi: rssi), Date())
@@ -167,7 +219,7 @@ private final class ProximityEngine: NSObject, CBCentralManagerDelegate, CBPerip
 
     guard peripheral.identifier == monitoredID else { return }
     if monitoredPeripheral == nil { monitoredPeripheral = peripheral }
-    if !active {
+    if !active, (-110 ... -1).contains(rssi) {
       ingest(rssi)
       connectMonitored()
     }
@@ -197,47 +249,40 @@ private final class ProximityEngine: NSObject, CBCentralManagerDelegate, CBPerip
     // read lets `lastReadAt` go stale so the stall branch trips.
     guard peripheral.identifier == monitoredID, error == nil else { return }
     lastReadAt = Date()
-    ingest(RSSI.intValue > 0 ? 0 : RSSI.intValue)
+    ingest(RSSI.intValue)
   }
 
   // MARK: Private
 
-  private static let hysteresisGap = 6 // dBm; cancel a departure only on a clear return (anti-oscillation)
-  private static let signalTimeout: TimeInterval = 30 // full loss → lock (security cap)
+  private static let signalTimeout: TimeInterval = 30
+  private static let signalRecheckSeconds: TimeInterval = 15
   private static let rssiPollSeconds: TimeInterval = 1
   private static let activeStallSeconds: TimeInterval = 10
   private static let discoveredTTL: TimeInterval = 5 // drop picker entries not seen recently
+  private static let anyInputEvent = CGEventType(rawValue: UInt32.max)!
 
   private let queue = DispatchQueue(label: "dev.PangMo5.Amado.proximityLock")
   private var central: CBCentralManager?
   private var monitoredID: UUID?
   private var monitoredPeripheral: CBPeripheral?
-  private var farRSSI = -56
-  private var grace: TimeInterval = 2
-  private var smoothingWindow = 3
-  private var presence = true
+  private var monitorMode = ProximityDetectionMode.smart
+  private var decisionEngine = ProximityDecisionEngine(configuration: .init())
   private var active = false
-  private var buffer = [Int]()
-  private var farTimer: DispatchWorkItem?
+  private var suspended = false
   private var signalTimer: DispatchWorkItem?
+  private var manualDecisionTimer: DispatchWorkItem?
   private var pollTimer: DispatchWorkItem?
   private var scanMode = false
   private var seen = [UUID: (device: DiscoveredDevice, at: Date)]()
   private var discoveredFlush: DispatchWorkItem?
   private var lastReadAt = Date.distantPast
   private var lastStatus: ProximityStatus?
+  private var lastLoggedPhase: ProximityDecisionEngine.Phase?
+  private var lastLoggedSuppression = false
 
   private let discoveredCont: AsyncStream<[DiscoveredDevice]>.Continuation
-  private let farCont: AsyncStream<Void>.Continuation
+  private let farCont: AsyncStream<ProximityDecisionEngine.LockReason>.Continuation
   private let statusCont: AsyncStream<ProximityStatus>.Continuation
-
-  private static func isSessionLocked() -> Bool {
-    guard
-      let dict = CGSessionCopyCurrentDictionary() as? [String: Any],
-      let locked = dict["CGSSessionScreenIsLocked"] as? Int
-    else { return false }
-    return locked == 1
-  }
 
   private static func makeStream<T>() -> (AsyncStream<T>, AsyncStream<T>.Continuation) {
     var continuation: AsyncStream<T>.Continuation!
@@ -245,72 +290,145 @@ private final class ProximityEngine: NSObject, CBCentralManagerDelegate, CBPerip
     return (stream, continuation)
   }
 
+  private static func userIdleSeconds() -> TimeInterval {
+    CGEventSource.secondsSinceLastEventType(
+      .hidSystemState,
+      eventType: anyInputEvent,
+    )
+  }
+
   private func ingest(_ rssi: Int) {
-    resetSignalTimer()
-    let avg = smooth(rssi)
-    let nearRSSI = farRSSI + Self.hysteresisGap
-
-    // Re-arm lockability as soon as we're back above the leave line, so a return
-    // never leaves us permanently unable to lock (closes the earlier dead-band).
-    if avg >= farRSSI { presence = true }
-
-    if avg >= nearRSSI {
-      // Clearly back → cancel any pending departure.
-      cancelFarTimer()
-      emitStatus(.near(rssi: avg))
-    } else if avg < farRSSI, presence, farTimer == nil {
-      // Past the leave line → start the grace countdown.
-      emitStatus(.leaving(rssi: avg))
-      scheduleFar()
-    }
-    // In the [farRSSI, nearRSSI) band we neither cancel nor start: a running
-    // countdown keeps running, so boundary oscillation can't perpetually reset
-    // it (the bug where "Signal weak" showed but the Mac never locked).
+    guard (-110 ... -1).contains(rssi), !suspended else { return }
+    let evaluation = decisionEngine.ingest(
+      rssi: rssi,
+      at: ProcessInfo.processInfo.systemUptime,
+      idleSeconds: Self.userIdleSeconds(),
+    )
+    apply(evaluation)
+    scheduleSignalCheck(after: Self.signalTimeout)
   }
 
-  private func scheduleFar() {
-    let work = DispatchWorkItem { [weak self] in
-      guard let self else { return }
-      farTimer = nil
-      presence = false // latch → no repeat locks until re-armed
-      emitStatus(.away)
-      fireLock()
-    }
-    farTimer = work
-    queue.asyncAfter(deadline: .now() + grace, execute: work)
-  }
-
-  private func cancelFarTimer() {
-    farTimer?.cancel()
-    farTimer = nil
-  }
-
-  private func resetSignalTimer() {
+  private func scheduleSignalCheck(after delay: TimeInterval) {
     signalTimer?.cancel()
     let work = DispatchWorkItem { [weak self] in
-      guard let self else { return }
-      emitStatus(.signalLost)
-      if presence { // full signal loss = security cap → lock
-        presence = false
-        fireLock()
+      guard
+        let self,
+        monitoredID != nil,
+        !suspended,
+        central?.state == .poweredOn
+      else { return }
+      let evaluation = decisionEngine.signalLost(
+        at: ProcessInfo.processInfo.systemUptime,
+        idleSeconds: Self.userIdleSeconds(),
+      )
+      apply(evaluation)
+      if evaluation.lockReason == nil {
+        scheduleSignalCheck(after: Self.signalRecheckSeconds)
       }
     }
     signalTimer = work
-    queue.asyncAfter(deadline: .now() + Self.signalTimeout, execute: work)
+    queue.asyncAfter(deadline: .now() + delay, execute: work)
   }
 
-  private func smooth(_ rssi: Int) -> Int {
-    buffer.append(rssi)
-    if buffer.count > smoothingWindow { buffer.removeFirst(buffer.count - smoothingWindow) }
-    return buffer.reduce(0, +) / buffer.count
+  private func apply(_ evaluation: ProximityDecisionEngine.Evaluation) {
+    let snapshot = evaluation.snapshot
+    emitStatus(status(for: snapshot))
+    scheduleManualDecisionCheck(for: snapshot)
+    if
+      snapshot.phase != lastLoggedPhase
+      || snapshot.isActivitySuppressed != lastLoggedSuppression
+      || evaluation.lockReason != nil
+    {
+      loggerSnapshot(snapshot, event: evaluation.lockReason?.rawValue ?? "state")
+      lastLoggedPhase = snapshot.phase
+      lastLoggedSuppression = snapshot.isActivitySuppressed
+    }
+    if let reason = evaluation.lockReason {
+      fireLock(reason: reason)
+    }
   }
 
-  /// Lock only if the session isn't already locked — avoids redundant work at the
-  /// login window.
-  private func fireLock() {
-    guard !Self.isSessionLocked() else { return }
-    logger.log("proximity: device left → locking")
-    farCont.yield(())
+  private func scheduleManualDecisionCheck(for snapshot: ProximityDecisionEngine.Snapshot) {
+    manualDecisionTimer?.cancel()
+    manualDecisionTimer = nil
+    guard
+      monitorMode == .manual,
+      snapshot.phase == .suspectedAway,
+      let secondsUntilLock = snapshot.secondsUntilLock
+    else { return }
+
+    let work = DispatchWorkItem { [weak self] in
+      guard let self, monitoredID != nil, !suspended else { return }
+      let evaluation = decisionEngine.advanceTime(
+        to: ProcessInfo.processInfo.systemUptime,
+        idleSeconds: Self.userIdleSeconds(),
+      )
+      apply(evaluation)
+    }
+    manualDecisionTimer = work
+    queue.asyncAfter(
+      deadline: .now() + max(0.05, TimeInterval(secondsUntilLock)),
+      execute: work,
+    )
+  }
+
+  private func status(for snapshot: ProximityDecisionEngine.Snapshot) -> ProximityStatus {
+    switch snapshot.phase {
+    case .learning:
+      .learning(rssi: snapshot.rssi)
+
+    case .near:
+      if
+        snapshot.isActivitySuppressed,
+        let rssi = snapshot.rssi,
+        let threshold = snapshot.farThresholdRSSI
+      {
+        .pausedByActivity(rssi: rssi, threshold: threshold)
+      } else if let rssi = snapshot.rssi, let threshold = snapshot.farThresholdRSSI {
+        .near(rssi: rssi, threshold: threshold)
+      } else {
+        .searching
+      }
+
+    case .suspectedAway:
+      if let rssi = snapshot.rssi, let threshold = snapshot.farThresholdRSSI {
+        .leaving(
+          rssi: rssi,
+          threshold: threshold,
+          secondsRemaining: snapshot.secondsUntilLock,
+        )
+      } else {
+        .searching
+      }
+
+    case .signalLost:
+      .signalLost
+
+    case .awayLatched:
+      .away(reason: snapshot.lockReason ?? .extendedSignalLoss)
+    }
+  }
+
+  private func loggerSnapshot(
+    _ snapshot: ProximityDecisionEngine.Snapshot,
+    event: String,
+  ) {
+    logger.log(
+      """
+      proximity: event=\(event, privacy: .public) phase=\(snapshot.phase.rawValue, privacy: .public) \
+      rssi=\(snapshot.rssi ?? 0) baseline=\(snapshot.learnedNearRSSI ?? 0) \
+      threshold=\(snapshot.farThresholdRSSI ?? 0) slope=\(snapshot.slope ?? 0, format: .fixed(precision: 2)) \
+      idle=\(snapshot.idleSeconds, format: .fixed(precision: 1)) \
+      suppressed=\(snapshot.isActivitySuppressed)
+      """
+    )
+  }
+
+  /// Lock only if the session isn't already locked — avoids redundant work at
+  /// the login window while preserving the away latch.
+  private func fireLock(reason: ProximityDecisionEngine.LockReason) {
+    guard !MacSessionState.isLocked() else { return }
+    farCont.yield(reason)
   }
 
   private func ensureManager() {
@@ -326,7 +444,13 @@ private final class ProximityEngine: NSObject, CBCentralManagerDelegate, CBPerip
   }
 
   private func connectMonitored() {
-    guard let central, let peripheral = monitoredPeripheral, peripheral.state == .disconnected else { return }
+    guard
+      let central,
+      central.state == .poweredOn,
+      !suspended,
+      let peripheral = monitoredPeripheral,
+      peripheral.state == .disconnected
+    else { return }
     central.connect(peripheral, options: nil) // RSSI-only, reads no chars → no pairing prompt
   }
 
@@ -334,7 +458,7 @@ private final class ProximityEngine: NSObject, CBCentralManagerDelegate, CBPerip
   /// whether a read ever calls back, so a stalled or error-returning connection
   /// is torn down after `activeStallSeconds` (→ didDisconnect → reconnect / the
   /// passive scan path) instead of freezing and letting the 30s signal cap lock a
-  /// phone that never left. Tracked in `pollTimer` so `resetStateMachine` cancels
+  /// phone that never left. Tracked in `pollTimer` so a lifecycle reset cancels
   /// it (no overlapping poll chains after a re-monitor).
   private func schedulePoll(_ peripheral: CBPeripheral) {
     pollTimer?.cancel()
@@ -353,7 +477,7 @@ private final class ProximityEngine: NSObject, CBCentralManagerDelegate, CBPerip
   }
 
   private func applyScan() {
-    guard let central, central.state == .poweredOn else { return }
+    guard let central, central.state == .poweredOn, !suspended else { return }
     let wants = scanMode || monitoredID != nil
     if wants {
       guard !central.isScanning else { return }
@@ -366,17 +490,40 @@ private final class ProximityEngine: NSObject, CBCentralManagerDelegate, CBPerip
     }
   }
 
-  private func resetStateMachine() {
-    presence = true
+  private func resetConnectionState(clearLearnedBaseline: Bool) {
     active = false
-    buffer.removeAll()
-    cancelFarTimer()
+    decisionEngine.reset(clearLearnedBaseline: clearLearnedBaseline)
     signalTimer?.cancel()
     signalTimer = nil
+    manualDecisionTimer?.cancel()
+    manualDecisionTimer = nil
     pollTimer?.cancel()
     pollTimer = nil
     if let central, let peripheral = monitoredPeripheral { central.cancelPeripheralConnection(peripheral) }
     monitoredPeripheral = nil
+    lastLoggedPhase = nil
+    lastLoggedSuppression = false
+  }
+
+  @objc
+  private func workspaceWillSleep(_: Notification) {
+    queue.async {
+      self.suspended = true
+      self.central?.stopScan()
+      self.resetConnectionState(clearLearnedBaseline: false)
+      self.emitStatus(self.monitoredID == nil ? .disabled : .reacquiring)
+    }
+  }
+
+  @objc
+  private func workspaceDidWake(_: Notification) {
+    queue.async {
+      self.suspended = false
+      self.resetConnectionState(clearLearnedBaseline: false)
+      self.reacquireMonitored()
+      self.applyScan()
+      self.emitStatus(self.monitoredID == nil ? .disabled : .reacquiring)
+    }
   }
 
   private func scheduleDiscoveredFlush() {

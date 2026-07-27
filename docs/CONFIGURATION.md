@@ -27,6 +27,8 @@ Service Management and is not part of this file either.
 proximity_auto_lock = false
 proximity_device_id = ""
 proximity_device_name = ""
+proximity_mode = "smart"
+proximity_sensitivity = "balanced"
 proximity_far_rssi = -56
 proximity_grace_seconds = 2.0
 proximity_smoothing = 3
@@ -45,9 +47,17 @@ configuration.
 | `proximity_auto_lock` | Boolean | `false` | Enables walk-away locking using the selected iPhone's Bluetooth signal. |
 | `proximity_device_id` | String | `""` | Core Bluetooth UUID of the selected device. Prefer selecting it in Settings. |
 | `proximity_device_name` | String | `""` | Cached display name used by the Settings UI. |
-| `proximity_far_rssi` | Integer | `-56` | A smoothed signal at or below this dBm value is considered far. Settings accepts `-90` through `-40`. |
-| `proximity_grace_seconds` | Number | `2.0` | Signal must remain far for this many seconds. The UI offers `0`, `1`, `2`, `3`, and `5`. |
-| `proximity_smoothing` | Integer | `3` | Number of recent RSSI samples to average. Settings accepts `1` through `8`. |
+| `proximity_mode` | String | `"smart"` | Detection mode: `"smart"` learns the nearby signal and adapts its threshold; `"manual"` uses the three controls below. |
+| `proximity_sensitivity` | String | `"balanced"` | Smart-mode preset: `"conservative"`, `"balanced"`, or `"fast"`. |
+| `proximity_far_rssi` | Integer | `-56` | Manual mode only. A smoothed signal at or below this dBm value is considered far. Settings accepts `-90` through `-40`. |
+| `proximity_grace_seconds` | Number | `2.0` | Manual mode only. Signal must remain far for this many seconds. The UI offers `0`, `1`, `2`, `3`, and `5`. |
+| `proximity_smoothing` | Integer | `3` | Manual mode only. Number of recent RSSI samples to average. Settings accepts `1` through `8`. |
+
+Existing configuration files that do not contain `proximity_mode` use Smart
+mode automatically. Auto-lock itself remains opt-in and is not enabled by this
+default. The learned nearby baseline is runtime-only: **Recalibrate nearby
+signal** discards it and starts a fresh learning window without changing
+`config.toml`.
 
 ## Reload behavior
 

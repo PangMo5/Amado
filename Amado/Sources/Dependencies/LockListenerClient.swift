@@ -8,10 +8,9 @@ import OSLog
 // MARK: - LockListenerClient
 
 /// Listens on the fixed agent port (`AmadoService.defaultPort`) and surfaces
-/// each incoming framed payload as an `AsyncStream<Data>`. It is deliberately
-/// dumb about meaning: it hands raw wire bytes to the reducer, which owns
-/// verification (HMAC via `LockCodec`) and replay dedup. Clients reach it by
-/// `host:port` (Tailscale/VPN/LAN) — there is no Bonjour advertisement.
+/// each incoming framed payload to the reducer, which owns verification,
+/// replay dedup, session-state inspection, and command effects. A verified
+/// client keeps the connection open for the reducer's authenticated response.
 ///
 /// `@preconcurrency import Network` because Network.framework's handler
 /// closures predate `Sendable`; everything here runs on a single serial queue,
@@ -21,8 +20,8 @@ struct LockListenerClient: Sendable {
   /// Start listening on the fixed agent port. Idempotent.
   var start: @Sendable () async throws -> Void
   var stop: @Sendable () async -> Void
-  /// One element per received, newline-delimited payload (delimiter stripped).
-  var incoming: @Sendable () -> AsyncStream<Data> = { AsyncStream { _ in } }
+  /// One element per received, newline-delimited request.
+  var incoming: @Sendable () -> AsyncStream<IncomingLockRequest> = { AsyncStream { _ in } }
 }
 
 // MARK: DependencyKey
@@ -59,14 +58,14 @@ private actor LockListener {
   // MARK: Lifecycle
 
   init() {
-    var continuation: AsyncStream<Data>.Continuation!
+    var continuation: AsyncStream<IncomingLockRequest>.Continuation!
     stream = AsyncStream(bufferingPolicy: .unbounded) { continuation = $0 }
     self.continuation = continuation
   }
 
   // MARK: Internal
 
-  let stream: AsyncStream<Data>
+  let stream: AsyncStream<IncomingLockRequest>
 
   func start() throws {
     guard listener == nil else { return }
@@ -106,24 +105,50 @@ private actor LockListener {
   private static let queue = DispatchQueue(label: "dev.PangMo5.Amado.lock-listener")
   private static let maxFrame = 16 * 1024
 
-  private let continuation: AsyncStream<Data>.Continuation
+  private let continuation: AsyncStream<IncomingLockRequest>.Continuation
   private var listener: NWListener?
 
   /// Accumulate bytes on one connection until the frame delimiter, then yield
-  /// the payload and close. One command per connection keeps the loop simple
-  /// and bounds a misbehaving peer with `maxFrame`.
+  /// one request. Valid authenticated commands keep the connection open until
+  /// the reducer answers or the bounded response wait expires.
   private static func receive(
     _ connection: NWConnection,
     buffer: Data,
-    continuation: AsyncStream<Data>.Continuation,
+    continuation: AsyncStream<IncomingLockRequest>.Continuation,
   ) {
     connection.receive(minimumIncompleteLength: 1, maximumLength: maxFrame) { chunk, _, isComplete, error in
       var buffer = buffer
       if let chunk, !chunk.isEmpty {
         buffer.append(chunk)
         if let index = buffer.firstIndex(of: LockFraming.delimiter) {
-          continuation.yield(Data(buffer[..<index]))
-          connection.cancel()
+          let data = Data(buffer[..<index])
+          let responseChannel = LockResponseChannel()
+          continuation.yield(
+            IncomingLockRequest(
+              data: data,
+              responseChannel: responseChannel,
+            )
+          )
+
+          guard
+            let secretBase64 = AmadoKeychain.loadSecret(),
+            let secret = PairingSecret(base64: secretBase64),
+            (try? LockCodec.decode(data, secret: secret)) != nil
+          else {
+            connection.cancel()
+            return
+          }
+
+          Task {
+            guard let response = await responseChannel.firstResponse() else {
+              connection.cancel()
+              return
+            }
+            connection.send(
+              content: LockFraming.frame(response),
+              completion: .contentProcessed { _ in connection.cancel() },
+            )
+          }
           return
         }
         if buffer.count > maxFrame {

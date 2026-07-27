@@ -1,8 +1,8 @@
 # Security
 
-Amado is designed around a narrow capability: a paired client may lock a Mac.
-It does not expose unlock, login, shell execution, or general remote-control
-capabilities.
+Amado is designed around a narrow capability: a paired client may lock a Mac
+and read whether its current login session is locked. It does not expose
+unlock, login, shell execution, or general remote-control capabilities.
 
 Amado reaches that capability in two ways: authenticated one-tap commands from
 your Apple devices, and local Bluetooth proximity auto-lock when you leave.
@@ -15,8 +15,12 @@ Both paths can only lock.
 - The Mac stores that secret in Keychain. The iPhone stores paired-Mac data in
   its App Group container so the app, widget, Control Center control, and Watch
   relay can use it.
-- Every command is authenticated with HMAC-SHA256. The timestamp must be within
-  30 seconds, and a nonce may be accepted only once, limiting replay.
+- Every command and response is authenticated with HMAC-SHA256. Command
+  timestamps must be within 30 seconds, and a nonce may be accepted only once,
+  limiting replay. A response carries the matching command nonce and its own
+  freshness timestamp.
+- Status responses contain only the Mac's current locked or unlocked state.
+  Amado does not expose a session history or retain a remote activity log.
 - LAN commands use Bonjour discovery and a direct TCP connection.
 - Remote commands use HTTPS through a tunnel operated by the user. The local
   HTTP listener binds only to `127.0.0.1:51521`.
@@ -26,9 +30,9 @@ Both paths can only lock.
 ## Security boundaries
 
 TLS and HMAC solve different problems. The HTTPS tunnel protects traffic in
-transit and authenticates the public endpoint. HMAC authenticates the lock
-command to Amado even though the tunnel terminates TLS before forwarding it to
-the loopback listener.
+transit and authenticates the public endpoint. HMAC authenticates commands and
+their matching responses even though the tunnel terminates TLS before
+forwarding them to the loopback listener.
 
 Anyone with the pairing payload can lock the Mac. They cannot unlock it through
 Amado, but unexpected locks can still disrupt work. Do not publish the QR code,

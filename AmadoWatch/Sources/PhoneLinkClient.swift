@@ -16,8 +16,9 @@ struct PhoneLinkClient: Sendable {
   var activate: @Sendable () -> Void
   /// The Mac list as the phone syncs it (latest wins).
   var macUpdates: @Sendable () -> AsyncStream<[WatchMac]> = { AsyncStream { _ in } }
-  /// Ask the phone to lock `macID` (nil = first). Returns once acknowledged.
-  var sendLock: @Sendable (_ macID: UUID?) async throws -> Void
+  /// Ask the phone to lock `macID` (nil = first). Returns the Mac's signed
+  /// outcome, relayed through the phone.
+  var sendLock: @Sendable (_ macID: UUID?) async throws -> LockCommandResponse.Outcome
 }
 
 // MARK: DependencyKey
@@ -32,7 +33,11 @@ extension PhoneLinkClient: DependencyKey {
     )
   }()
 
-  static let testValue = PhoneLinkClient(activate: { }, macUpdates: { AsyncStream { _ in } }, sendLock: { _ in })
+  static let testValue = PhoneLinkClient(
+    activate: { },
+    macUpdates: { AsyncStream { _ in } },
+    sendLock: { _ in .lockRequested },
+  )
   static let previewValue = testValue
 }
 
@@ -47,10 +52,14 @@ extension DependencyValues {
 
 enum PhoneLinkError: Error, LocalizedError, Equatable {
   case phoneUnreachable
+  case invalidResponse
+  case requestFailed(String)
 
   var errorDescription: String? {
     switch self {
     case .phoneUnreachable: "iPhone not reachable"
+    case .invalidResponse: "iPhone returned an invalid response"
+    case .requestFailed(let message): message
     }
   }
 }
@@ -79,15 +88,27 @@ private final class WatchPhoneLink: NSObject, WCSessionDelegate, @unchecked Send
     session.activate()
   }
 
-  func sendLock(macID: UUID?) async throws {
+  func sendLock(macID: UUID?) async throws -> LockCommandResponse.Outcome {
     let session = WCSession.default
     guard session.isReachable else { throw PhoneLinkError.phoneUnreachable }
     var message: [String: Any] = [WatchMessage.actionKey: WatchMessage.lockAction]
     if let macID { message[WatchMessage.macIDKey] = macID.uuidString }
-    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+    return try await withCheckedThrowingContinuation {
+      (continuation: CheckedContinuation<LockCommandResponse.Outcome, Error>) in
       session.sendMessage(
         message,
-        replyHandler: { _ in continuation.resume() },
+        replyHandler: { reply in
+          if
+            let rawOutcome = reply[WatchMessage.outcomeKey] as? String,
+            let outcome = LockCommandResponse.Outcome(rawValue: rawOutcome)
+          {
+            continuation.resume(returning: outcome)
+          } else if let message = reply[WatchMessage.errorKey] as? String {
+            continuation.resume(throwing: PhoneLinkError.requestFailed(message))
+          } else {
+            continuation.resume(throwing: PhoneLinkError.invalidResponse)
+          }
+        },
         errorHandler: { error in continuation.resume(throwing: error) },
       )
     }

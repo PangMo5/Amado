@@ -12,13 +12,14 @@ import OSLog
 /// Tunnel / Tailscale Funnel / ngrok) forwards its public host to. `POST /lock`
 /// and `POST /hello` carry the very same signed envelope the LAN path uses; the
 /// handler verifies the HMAC (an unauthenticated request gets 401) then hands
-/// the raw bytes to the reducer, which owns replay dedup and the actual lock —
-/// identical to the LAN listener, so both transports share one code path.
+/// the request to the reducer, which owns replay dedup, session-state
+/// inspection, and the actual lock. The HTTP response contains the reducer's
+/// signed command result.
 @DependencyClient
 struct RemoteListenerClient: Sendable {
   /// Start the HTTP server. Idempotent.
   var start: @Sendable () async -> Void
-  var incoming: @Sendable () -> AsyncStream<Data> = { AsyncStream { _ in } }
+  var incoming: @Sendable () -> AsyncStream<IncomingLockRequest> = { AsyncStream { _ in } }
 }
 
 // MARK: DependencyKey
@@ -50,32 +51,48 @@ private actor RemoteListener {
   // MARK: Lifecycle
 
   init() {
-    var continuation: AsyncStream<Data>.Continuation!
+    var continuation: AsyncStream<IncomingLockRequest>.Continuation!
     stream = AsyncStream(bufferingPolicy: .unbounded) { continuation = $0 }
     self.continuation = continuation
   }
 
   // MARK: Internal
 
-  let stream: AsyncStream<Data>
+  let stream: AsyncStream<IncomingLockRequest>
 
   func start() {
     guard task == nil else { return }
     let continuation = continuation
     let router = Router()
-    // /lock and /hello take the identical signed envelope; the reducer tells
-    // them apart by the command's action, so one handler serves both.
-    for path in [AmadoService.lockPath, AmadoService.helloPath] {
-      router.post(RouterPath(stringLiteral: path)) { request, _ -> HTTPResponse.Status in
+    // All command paths take the same signed envelope and return a separately
+    // signed response envelope.
+    for path in [AmadoService.lockPath, AmadoService.helloPath, AmadoService.statusPath] {
+      router.post(RouterPath(stringLiteral: path)) { request, _ -> Response in
         var request = request
         let buffer = try await request.collectBody(upTo: Self.maxBody)
         let body = Data(buffer: buffer)
-        guard let secret = Self.currentSecret() else { return .serviceUnavailable }
+        guard let secret = Self.currentSecret() else {
+          return Response(status: .serviceUnavailable)
+        }
         // Verify the HMAC here so an unauthenticated caller gets 401; the
         // reducer re-decodes for dedup + lock + logging.
-        guard (try? LockCodec.decode(body, secret: secret)) != nil else { return .unauthorized }
-        continuation.yield(body)
-        return .ok
+        guard (try? LockCodec.decode(body, secret: secret)) != nil else {
+          return Response(status: .unauthorized)
+        }
+        let responseChannel = LockResponseChannel()
+        continuation.yield(
+          IncomingLockRequest(
+            data: body,
+            responseChannel: responseChannel,
+          )
+        )
+        guard let response = await responseChannel.firstResponse() else {
+          return Response(status: .serviceUnavailable)
+        }
+        return Response(
+          status: .ok,
+          body: .init(byteBuffer: ByteBuffer(bytes: response)),
+        )
       }
     }
     // Unauthenticated connectivity probe for the "Test connection" button.
@@ -97,7 +114,7 @@ private actor RemoteListener {
 
   private static let maxBody = 64 * 1024
 
-  private let continuation: AsyncStream<Data>.Continuation
+  private let continuation: AsyncStream<IncomingLockRequest>.Continuation
   private var task: Task<Void, Never>?
 
   private static func currentSecret() -> PairingSecret? {

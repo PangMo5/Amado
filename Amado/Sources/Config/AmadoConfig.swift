@@ -1,3 +1,4 @@
+import AmadoKit
 import Foundation
 
 /// Root of Amado's on-disk configuration, at `~/.config/amado/config.toml`
@@ -14,6 +15,8 @@ struct AmadoConfig: Equatable, Sendable, Codable {
     proximityAutoLock: Bool = false,
     proximityDeviceID: String = "",
     proximityDeviceName: String = "",
+    proximityMode: ProximityDetectionMode = .smart,
+    proximitySensitivity: ProximitySensitivity = .balanced,
     proximityFarRSSI: Int = -56,
     proximityGraceSeconds: Double = 2,
     proximitySmoothing: Int = 3,
@@ -22,6 +25,8 @@ struct AmadoConfig: Equatable, Sendable, Codable {
     self.proximityAutoLock = proximityAutoLock
     self.proximityDeviceID = proximityDeviceID
     self.proximityDeviceName = proximityDeviceName
+    self.proximityMode = proximityMode
+    self.proximitySensitivity = proximitySensitivity
     self.proximityFarRSSI = proximityFarRSSI
     self.proximityGraceSeconds = proximityGraceSeconds
     self.proximitySmoothing = proximitySmoothing
@@ -44,6 +49,12 @@ struct AmadoConfig: Equatable, Sendable, Codable {
     proximityDeviceName = container.contains(.proximityDeviceName)
       ? try container.decode(String.self, forKey: .proximityDeviceName)
       : ""
+    proximityMode = container.contains(.proximityMode)
+      ? try container.decode(ProximityDetectionMode.self, forKey: .proximityMode)
+      : .smart
+    proximitySensitivity = container.contains(.proximitySensitivity)
+      ? try container.decode(ProximitySensitivity.self, forKey: .proximitySensitivity)
+      : .balanced
     proximityFarRSSI = container.contains(.proximityFarRSSI)
       ? try container.decode(Int.self, forKey: .proximityFarRSSI)
       : -56
@@ -67,12 +78,17 @@ struct AmadoConfig: Equatable, Sendable, Codable {
   var proximityDeviceID: String
   /// Cached display name of that device, for the Settings UI.
   var proximityDeviceName: String
+  /// Smart adaptive detection is the default; manual preserves direct control
+  /// over the RSSI threshold, grace, and moving-average window.
+  var proximityMode: ProximityDetectionMode
+  /// Tradeoff between false-lock resistance and smart-mode reaction speed.
+  var proximitySensitivity: ProximitySensitivity
   /// dBm at/below which (smoothed, sustained for the grace) the Mac counts as
-  /// "left". Less negative = must be closer to stay unlocked.
+  /// "left" in manual mode. Less negative = must be closer to stay unlocked.
   var proximityFarRSSI: Int
-  /// Seconds the signal must stay below the threshold before locking.
+  /// Seconds the signal must stay below the threshold in manual mode.
   var proximityGraceSeconds: Double
-  /// Number of recent RSSI samples averaged before the near/far decision.
+  /// Number of recent RSSI samples averaged in manual mode.
   /// Smaller = snappier but noisier; larger = smoother but laggier.
   var proximitySmoothing: Int
 
@@ -83,6 +99,8 @@ struct AmadoConfig: Equatable, Sendable, Codable {
     case proximityAutoLock = "proximity_auto_lock"
     case proximityDeviceID = "proximity_device_id"
     case proximityDeviceName = "proximity_device_name"
+    case proximityMode = "proximity_mode"
+    case proximitySensitivity = "proximity_sensitivity"
     case proximityFarRSSI = "proximity_far_rssi"
     case proximityGraceSeconds = "proximity_grace_seconds"
     case proximitySmoothing = "proximity_smoothing"

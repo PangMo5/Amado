@@ -10,14 +10,14 @@ import WidgetKit
 struct LockWidget: Widget {
   var body: some WidgetConfiguration {
     AppIntentConfiguration(
-      kind: "dev.PangMo5.Amado.LockWidget",
+      kind: AmadoService.lockWidgetKind,
       intent: SelectMacIntent.self,
       provider: LockProvider(),
     ) { entry in
       LockWidgetView(entry: entry)
     }
     .configurationDisplayName("Lock Mac")
-    .description("Lock a paired Mac with one tap.")
+    .description("Lock a paired Mac or refresh its current status.")
     .supportedFamilies([.systemSmall])
   }
 }
@@ -27,6 +27,7 @@ struct LockWidget: Widget {
 struct LockEntry: TimelineEntry {
   let date: Date
   let mac: LockWidgetMac?
+  let feedback: LockActionFeedback?
   /// True only for the WidgetKit placeholder shown while the entry loads, so the
   /// tile can show a spinner instead of stale/blank content.
   var isLoading = false
@@ -35,8 +36,11 @@ struct LockEntry: TimelineEntry {
 // MARK: - LockProvider
 
 struct LockProvider: AppIntentTimelineProvider {
+
+  // MARK: Internal
+
   func placeholder(in _: Context) -> LockEntry {
-    LockEntry(date: Date(), mac: nil, isLoading: true)
+    LockEntry(date: Date(), mac: nil, feedback: nil, isLoading: true)
   }
 
   func snapshot(for configuration: SelectMacIntent, in _: Context) async -> LockEntry {
@@ -44,16 +48,28 @@ struct LockProvider: AppIntentTimelineProvider {
   }
 
   func timeline(for configuration: SelectMacIntent, in _: Context) async -> Timeline<LockEntry> {
-    Timeline(entries: [entry(for: configuration)], policy: .never)
+    let entry = entry(for: configuration)
+    let policy: TimelineReloadPolicy =
+      entry.feedback == nil
+        ? .never
+        : .after(entry.date.addingTimeInterval(LockActionFeedback.displayDuration))
+    return Timeline(entries: [entry], policy: policy)
   }
 
+  // MARK: Private
+
   private func entry(for configuration: SelectMacIntent) -> LockEntry {
+    let now = Date()
     let mac = configuration.mac
       .flatMap(UUID.init(uuidString:))
       .flatMap { id in PairedMacsStore.load().first { $0.id == id } }
       .map { LockWidgetMac(id: $0.id, name: $0.displayName) }
-    return LockEntry(date: Date(), mac: mac)
+    let feedback = mac.flatMap {
+      LockActionFeedbackStore.load(surface: .widget, macID: $0.id, now: now)
+    }
+    return LockEntry(date: now, mac: mac, feedback: feedback)
   }
+
 }
 
 // MARK: - LockWidgetMac
@@ -67,8 +83,6 @@ struct LockWidgetMac: Equatable, Sendable {
 
 struct LockWidgetView: View {
 
-  // MARK: Internal
-
   let entry: LockEntry
 
   var body: some View {
@@ -78,12 +92,9 @@ struct LockWidgetView: View {
           .progressViewStyle(.circular)
           .frame(maxWidth: .infinity, maxHeight: .infinity)
       } else if let mac = entry.mac {
-        Button(intent: LockMacIntent(macID: mac.id.uuidString)) {
-          tile(name: mac.name, hint: "Tap to lock", glyphTint: true)
-        }
-        .buttonStyle(.plain)
+        ConfiguredLockWidgetView(mac: mac, feedback: entry.feedback)
       } else {
-        tile(name: "Choose a Mac", hint: "Long-press to choose", glyphTint: false)
+        UnconfiguredLockWidgetView()
       }
     }
     .containerBackground(for: .widget) {
@@ -95,30 +106,96 @@ struct LockWidgetView: View {
     }
   }
 
-  // MARK: Private
+}
 
-  private func tile(name: String, hint: String, glyphTint: Bool) -> some View {
+// MARK: - ConfiguredLockWidgetView
+
+private struct ConfiguredLockWidgetView: View {
+  let mac: LockWidgetMac
+  let feedback: LockActionFeedback?
+
+  var body: some View {
     VStack(alignment: .leading, spacing: 0) {
-      ZStack {
-        Circle().fill(glyphTint ? AnyShapeStyle(Color("BrandTint").gradient) : AnyShapeStyle(.quaternary))
-        Image(systemName: "lock.fill")
-          .font(.system(size: 20, weight: .bold))
-          .foregroundStyle(glyphTint ? .white : .secondary)
+      HStack(alignment: .top) {
+        Button(intent: LockMacIntent(macID: mac.id.uuidString)) {
+          WidgetGlyph(
+            systemImage: feedback?.systemImage ?? "lock.fill",
+            color: feedback?.isFailure == true ? .red : Color("BrandTint"),
+          )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Lock \(mac.name)")
+
+        Spacer()
+
+        Button(intent: RefreshMacStatusIntent(macID: mac.id.uuidString)) {
+          Image(systemName: "arrow.clockwise")
+            .font(.system(size: 15, weight: .semibold))
+            .foregroundStyle(.secondary)
+            .frame(width: 36, height: 36)
+            .background(Color.secondary.opacity(0.12), in: Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Refresh \(mac.name) status")
       }
-      .frame(width: 48, height: 48)
 
       Spacer(minLength: 8)
 
-      Text(name)
+      Button(intent: LockMacIntent(macID: mac.id.uuidString)) {
+        VStack(alignment: .leading, spacing: 0) {
+          Text(mac.name)
+            .font(.headline)
+            .foregroundStyle(.primary)
+            .lineLimit(1)
+            .minimumScaleFactor(0.6)
+          Text(feedback?.widgetHint ?? "Tap to lock")
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(.rect)
+      }
+      .buttonStyle(.plain)
+      .accessibilityLabel("Lock \(mac.name)")
+      .accessibilityHint(feedback?.widgetHint ?? "Tap to lock")
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+  }
+}
+
+// MARK: - UnconfiguredLockWidgetView
+
+private struct UnconfiguredLockWidgetView: View {
+  var body: some View {
+    VStack(alignment: .leading, spacing: 0) {
+      WidgetGlyph(systemImage: "lock.fill", color: .secondary)
+
+      Spacer(minLength: 8)
+
+      Text("Choose a Mac")
         .font(.headline)
         .foregroundStyle(.primary)
-        .lineLimit(1)
-        .minimumScaleFactor(0.6)
-      Text(hint)
+      Text("Long-press to choose")
         .font(.caption2)
         .foregroundStyle(.secondary)
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
   }
+}
 
+// MARK: - WidgetGlyph
+
+private struct WidgetGlyph: View {
+  let systemImage: String
+  let color: Color
+
+  var body: some View {
+    ZStack {
+      Circle().fill(color.gradient)
+      Image(systemName: systemImage)
+        .font(.system(size: 20, weight: .bold))
+        .foregroundStyle(.white)
+    }
+    .frame(width: 48, height: 48)
+  }
 }

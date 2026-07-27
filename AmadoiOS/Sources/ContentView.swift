@@ -19,7 +19,13 @@ struct ContentView: View {
         } else {
           Section("Your Macs") {
             ForEach(store.pairedMacs) { mac in
-              macRow(mac)
+              PairedMacRow(
+                mac: mac,
+                lockStatus: store.macLockStatuses[mac.id],
+                isSending: store.sendingMacID == mac.id,
+                isDisabled: store.sendingMacID != nil,
+                onLock: { store.send(.lockMac(mac.id)) },
+              )
             }
             .onDelete { offsets in
               for index in offsets {
@@ -86,6 +92,9 @@ struct ContentView: View {
       .sheet(isPresented: $isScanning) {
         scannerSheet
       }
+      .refreshable {
+        await store.send(.refreshStatusesRequested).finish()
+      }
       .task { await store.send(.task).finish() }
     }
   }
@@ -123,24 +132,73 @@ struct ContentView: View {
     }
   }
 
-  private func macRow(_ mac: PairedMac) -> some View {
-    Button {
-      store.send(.lockMac(mac.id))
-    } label: {
+}
+
+// MARK: - PairedMacRow
+
+private struct PairedMacRow: View {
+
+  // MARK: Internal
+
+  let mac: PairedMac
+  let lockStatus: MacLockStatus?
+  let isSending: Bool
+  let isDisabled: Bool
+  let onLock: () -> Void
+
+  var body: some View {
+    Button(action: onLock) {
       HStack {
         Image(systemSymbol: .desktopcomputer)
-          .foregroundStyle(.secondary)
-        Text(mac.displayName)
+          .foregroundStyle(Color("BrandTint"))
+        VStack(alignment: .leading, spacing: 2) {
+          Text(mac.displayName)
+          Text(statusLabel)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
         Spacer()
-        if store.sendingMacID == mac.id {
+        if isSending || lockStatus == .checking {
           ProgressView()
         } else {
-          Image(systemSymbol: .lockFill)
-            .foregroundStyle(.tint)
+          Image(systemName: statusSymbol)
+            .foregroundStyle(statusTint)
         }
       }
     }
-    .disabled(store.sendingMacID != nil)
+    .disabled(isDisabled)
+  }
+
+  // MARK: Private
+
+  private var statusLabel: LocalizedStringResource {
+    switch lockStatus {
+    case .checking: "Checking status…"
+    case .locked: "Locked"
+    case .unlocked: "Unlocked"
+    case .unavailable,
+         nil: "Status unavailable"
+    }
+  }
+
+  private var statusSymbol: String {
+    switch lockStatus {
+    case .locked: "lock.fill"
+    case .unlocked: "lock.open.fill"
+    case .checking,
+         .unavailable,
+         nil: "questionmark.circle"
+    }
+  }
+
+  private var statusTint: Color {
+    switch lockStatus {
+    case .locked: Color.secondary
+    case .unlocked: Color.accentColor
+    case .checking,
+         .unavailable,
+         nil: Color.secondary
+    }
   }
 
 }

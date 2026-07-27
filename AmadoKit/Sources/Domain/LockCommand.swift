@@ -23,6 +23,8 @@ public struct LockCommand: Codable, Equatable, Sendable {
     /// A pairing handshake: the client proves it holds the secret so the agent
     /// can show "paired ✓". Carries no lock — the agent must NOT lock on this.
     case hello
+    /// Read the Mac's current lock state without changing it.
+    case status
   }
 
   /// Commands older than this (relative to the agent's clock) are rejected as
@@ -57,6 +59,15 @@ public struct LockCommand: Codable, Equatable, Sendable {
     nonce: UUID = UUID(),
   ) -> Self {
     Self(action: .hello, origin: origin, issuedAt: now, nonce: nonce)
+  }
+
+  /// A `.status` request stamped now.
+  public static func status(
+    origin: String,
+    now: Date = Date(),
+    nonce: UUID = UUID(),
+  ) -> Self {
+    Self(action: .status, origin: origin, issuedAt: now, nonce: nonce)
   }
 
 }

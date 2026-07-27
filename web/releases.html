@@ -28,10 +28,15 @@
 <header class="releases-head">
   <p class="eyebrow">Release notes</p>
   <h1>What's new</h1>
-  <p class="sub">Every version of Amado, newest first.</p>
+  <p class="sub">Separate histories for the Mac agent and companion apps.</p>
 </header>
 
-<div class="release-list" id="list"><p class="state">Loading releases…</p></div>
+<div class="release-platforms" role="group" aria-label="Release notes platform">
+  <button type="button" class="release-platform active" data-platform="macos" aria-pressed="true">macOS</button>
+  <button type="button" class="release-platform" data-platform="ios" aria-pressed="false">iPhone &amp; Apple Watch</button>
+</div>
+
+<div class="release-list" id="list" aria-live="polite"><p class="state">Loading macOS releases…</p></div>
 
 <footer>
   <div class="footer-inner">
@@ -42,7 +47,7 @@
       <a href="./privacy.html">Privacy</a>
       <a href="https://github.com/PangMo5/Amado/blob/main/LICENSE">License</a>
     </div>
-    <p>Rendered from <code>CHANGELOG.md</code> on <code>main</code>, the single source of truth. Not affiliated with Apple Inc.</p>
+    <p>Rendered from <code>CHANGELOG.md</code> and <code>CHANGELOG-iOS.md</code> on <code>main</code>. Not affiliated with Apple Inc.</p>
     <p class="footer-apps">Apps by <a href="https://pangmo5.dev/">PangMo5</a>: <a href="https://pangmo5.dev/SwiftyCrow/">SwiftyCrow</a> · <a href="https://pangmo5.dev/Tatami/">Tatami</a> · <span class="cur" aria-current="page">Amado</span></p>
   </div>
 </footer>
@@ -54,9 +59,26 @@
   integrity="sha384-XQqX/4yiUGu+oyr87jvWzRuqBUK/adrY0DunhL+tID9m/9dwSpV8h9Fk/Sg6ifVQ"
   crossorigin="anonymous"></script>
 <script>
-  const SRC = "https://raw.githubusercontent.com/PangMo5/Amado/main/CHANGELOG.md";
   const REPO = "https://github.com/PangMo5/Amado";
+  const PLATFORMS = {
+    macos: {
+      label: "macOS",
+      source: "https://raw.githubusercontent.com/PangMo5/Amado/main/CHANGELOG.md",
+      history: REPO + "/releases",
+      tagPrefix: "v",
+      tagPath: REPO + "/releases/tag/",
+    },
+    ios: {
+      label: "iPhone & Apple Watch",
+      source: "https://raw.githubusercontent.com/PangMo5/Amado/main/CHANGELOG-iOS.md",
+      history: REPO + "/blob/main/CHANGELOG-iOS.md",
+      tagPrefix: "iOS-v",
+      tagPath: REPO + "/tree/",
+    },
+  };
   const list = document.getElementById("list");
+  const platformButtons = document.querySelectorAll("[data-platform]");
+  let requestID = 0;
 
   function escapeHTML(value) {
     return value.replace(/[&<>"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[character]));
@@ -81,39 +103,61 @@
     return entries;
   }
 
-  function fail() {
-    list.innerHTML = '<p class="state">Couldn\'t load the changelog. See releases on <a href="' + REPO + '/releases">GitHub</a>.</p>';
+  function fail(platform) {
+    list.innerHTML = '<p class="state">Couldn\'t load the ' + escapeHTML(platform.label) +
+      ' changelog. <a href="' + platform.history + '">View it on GitHub</a>.</p>';
   }
 
-  async function load() {
-    if (typeof marked === "undefined" || typeof DOMPurify === "undefined") return fail();
+  async function load(platformKey) {
+    const platform = PLATFORMS[platformKey];
+    const currentRequestID = ++requestID;
+    platformButtons.forEach((button) => {
+      const selected = button.dataset.platform === platformKey;
+      button.classList.toggle("active", selected);
+      button.setAttribute("aria-pressed", String(selected));
+    });
+    list.innerHTML = '<p class="state">Loading ' + escapeHTML(platform.label) + ' releases…</p>';
+
+    if (typeof marked === "undefined" || typeof DOMPurify === "undefined") return fail(platform);
     let markdown;
     try {
-      const response = await fetch(SRC, { cache: "no-cache" });
+      const response = await fetch(platform.source, { cache: "no-cache" });
       if (!response.ok) throw new Error(response.status);
       markdown = await response.text();
-    } catch (error) { return fail(); }
+    } catch (error) {
+      if (currentRequestID === requestID) fail(platform);
+      return;
+    }
 
+    if (currentRequestID !== requestID) return;
     const entries = parse(markdown);
-    if (!entries.length) return fail();
+    if (!entries.length) return fail(platform);
     list.innerHTML = "";
     entries.forEach((entry) => {
       const match = entry.heading.match(/^(.+?)\s+\((\d{4}-\d{2}-\d{2})\)$/);
       const version = (match ? match[1] : entry.heading).trim();
       const date = match ? formatDate(match[2].trim()) : "";
-      const tag = "v" + version.replace(/^v/, "");
+      const isUnreleased = version.toLowerCase() === "unreleased";
+      const tag = platform.tagPrefix + version.replace(/^(?:iOS-)?v/i, "");
+      const tagLink = isUnreleased ? "" :
+        '<a class="release-tag" href="' + platform.tagPath + encodeURIComponent(tag) + '">' +
+        escapeHTML(tag) + '</a>';
       const body = entry.body.join("\n").trim();
       const article = document.createElement("article");
       article.className = "release";
       article.innerHTML = '<div class="release-top"><h2>' + escapeHTML(version) + '</h2>' +
-        '<a class="release-tag" href="' + REPO + '/releases/tag/' + encodeURIComponent(tag) + '">' + escapeHTML(tag) + '</a>' +
+        tagLink +
         (date ? '<span class="release-date">' + escapeHTML(date) + '</span>' : "") + '</div>' +
         '<div class="md">' + (body ? DOMPurify.sanitize(marked.parse(body)) : "<p>No notes.</p>") + '</div>';
       list.appendChild(article);
     });
   }
 
-  load();
+  platformButtons.forEach((button) => {
+    button.addEventListener("click", () => load(button.dataset.platform));
+  });
+
+  load("macos");
 </script>
 
 </body>

@@ -11,6 +11,10 @@ public enum LockSenderError: Error, LocalizedError, Equatable {
   case offline
   case remoteUnreachable(host: String)
   case remoteRejected(status: Int)
+  case responseUnavailable
+  case invalidResponse
+
+  // MARK: Public
 
   public var errorDescription: String? {
     switch self {
@@ -21,6 +25,10 @@ public enum LockSenderError: Error, LocalizedError, Equatable {
     case .remoteUnreachable(let host):
       "Couldn't reach \(host) — check that its tunnel is running, then re-pair this Mac"
     case .remoteRejected(let status): "The Mac's tunnel rejected the command (HTTP \(status))"
+    case .responseUnavailable:
+      "The Mac accepted no authenticated response — update Amado on the Mac"
+    case .invalidResponse:
+      "The Mac returned an invalid authenticated response"
     }
   }
 }
@@ -40,10 +48,23 @@ public actor LANLockSender {
 
   // MARK: Public
 
-  public func send(_ command: LockCommand, toMacNamed targetName: String?, secret: PairingSecret) async throws {
+  public func send(
+    _ command: LockCommand,
+    toMacNamed targetName: String?,
+    secret: PairingSecret,
+  ) async throws -> LockCommandResponse {
     let endpoint = try await resolveEndpoint(named: targetName)
     let payload = LockFraming.frame(try LockCodec.encode(command, secret: secret))
-    try await deliver(payload, to: endpoint)
+    let responseData = try await deliver(payload, to: endpoint)
+    do {
+      return try LockResponseCodec.decode(
+        responseData,
+        secret: secret,
+        matching: command,
+      )
+    } catch {
+      throw LockSenderError.invalidResponse
+    }
   }
 
   // MARK: Private
@@ -51,7 +72,45 @@ public actor LANLockSender {
   private static let queue = DispatchQueue(label: "dev.PangMo5.Amado.lan-sender")
   /// Bonjour resolves in well under a second on the LAN, so keep this short:
   /// off-network it's just the wait before we report the Mac unreachable.
-  private static let timeout: TimeInterval = 2
+  private static let discoveryTimeout: TimeInterval = 2
+  /// Leave enough time for the Mac to report the observed lock transition,
+  /// rather than treating a transport-only ACK as success.
+  private static let responseTimeout: TimeInterval = 4
+
+  private static func receiveResponse(
+    _ connection: NWConnection,
+    buffer: Data,
+    box: ContinuationBox<Data>,
+  ) {
+    connection.receive(
+      minimumIncompleteLength: 1,
+      maximumLength: 16 * 1024,
+    ) { chunk, _, isComplete, error in
+      var buffer = buffer
+      if let chunk, !chunk.isEmpty {
+        buffer.append(chunk)
+        if let index = buffer.firstIndex(of: LockFraming.delimiter) {
+          box.resume(returning: Data(buffer[..<index]))
+          connection.cancel()
+          return
+        }
+        if buffer.count > 16 * 1024 {
+          box.resume(throwing: LockSenderError.invalidResponse)
+          connection.cancel()
+          return
+        }
+      }
+      if let error {
+        box.resume(throwing: error)
+        connection.cancel()
+      } else if isComplete {
+        box.resume(throwing: LockSenderError.responseUnavailable)
+        connection.cancel()
+      } else {
+        receiveResponse(connection, buffer: buffer, box: box)
+      }
+    }
+  }
 
   private func resolveEndpoint(named targetName: String?) async throws -> NWEndpoint {
     try await withCheckedThrowingContinuation { continuation in
@@ -79,15 +138,15 @@ public actor LANLockSender {
         }
       }
       browser.start(queue: Self.queue)
-      Self.queue.asyncAfter(deadline: .now() + Self.timeout) {
+      Self.queue.asyncAfter(deadline: .now() + Self.discoveryTimeout) {
         browser.cancel()
         box.resume(throwing: LockSenderError.noAgentFound)
       }
     }
   }
 
-  private func deliver(_ payload: Data, to endpoint: NWEndpoint) async throws {
-    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+  private func deliver(_ payload: Data, to endpoint: NWEndpoint) async throws -> Data {
+    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Data, Error>) in
       let box = ContinuationBox(continuation)
       let connection = NWConnection(to: endpoint, using: .tcp)
       connection.stateUpdateHandler = { state in
@@ -97,9 +156,12 @@ public actor LANLockSender {
             if let error {
               box.resume(throwing: error)
             } else {
-              box.resume(returning: ())
+              Self.receiveResponse(
+                connection,
+                buffer: Data(),
+                box: box,
+              )
             }
-            connection.cancel()
           })
 
         case .failed(let error):
@@ -111,8 +173,8 @@ public actor LANLockSender {
         }
       }
       connection.start(queue: Self.queue)
-      Self.queue.asyncAfter(deadline: .now() + Self.timeout) {
-        box.resume(throwing: LockSenderError.noAgentFound)
+      Self.queue.asyncAfter(deadline: .now() + Self.responseTimeout) {
+        box.resume(throwing: LockSenderError.responseUnavailable)
         connection.cancel()
       }
     }

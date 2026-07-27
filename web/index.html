@@ -67,11 +67,11 @@
   <div class="wrap">
     <p class="eyebrow">One tap, everywhere</p>
     <h2>Lock the moment you ask.</h2>
-    <p class="sub">The same paired Macs are available across the iPhone app, Home Screen, Control Center, and Apple Watch.</p>
+    <p class="sub">The same paired Macs are available across the iPhone app, Home Screen, Control Center, and Apple Watch—with a verified result from the Mac.</p>
     <div class="features">
-      <div class="feature"><div class="ico">📱</div><h3>iPhone app</h3><p>Pair by scanning the QR code on your Mac, then lock any saved Mac with one tap.</p></div>
-      <div class="feature"><div class="ico">⌚️</div><h3>Apple Watch</h3><p>Send the lock action from your wrist through the paired iPhone.</p></div>
-      <div class="feature"><div class="ico">◉</div><h3>Widget and Control</h3><p>Put a Mac on the Home Screen or add Lock Mac directly to Control Center.</p></div>
+      <div class="feature"><div class="ico">📱</div><h3>iPhone app</h3><p>See whether each Mac is locked or unlocked, pull to refresh, and lock any saved Mac with one tap.</p></div>
+      <div class="feature"><div class="ico">⌚️</div><h3>Apple Watch</h3><p>Send the action from your wrist and see whether the Mac was already locked or became locked.</p></div>
+      <div class="feature"><div class="ico">◉</div><h3>Widget and Control</h3><p>Control Center reports progress and the result; the Home Screen widget can also refresh the Mac's current status.</p></div>
     </div>
   </div>
 </section>
@@ -80,11 +80,11 @@
   <div class="wrap">
     <p class="eyebrow">No tap required</p>
     <h2>Walk away. Your Mac closes up.</h2>
-    <p class="sub">Bluetooth proximity is a primary Amado experience: the Mac watches for your iPhone to leave and locks without a button press.</p>
+    <p class="sub">Smart Bluetooth detection learns your nearby signal, follows departure trends, and locks without a button press.</p>
     <div class="features">
       <div class="feature"><div class="ico">🚶</div><h3>No phone app needed</h3><p>Proximity sensing runs on the Mac. The Amado iPhone app does not need to remain open.</p></div>
-      <div class="feature"><div class="ico">📶</div><h3>Tunable for your room</h3><p>Choose the RSSI threshold, grace period, and smoothing that fit your desk and environment.</p></div>
-      <div class="feature"><div class="ico">☁️</div><h3>Stable identity</h3><p>Use the same iCloud account on Mac and iPhone so macOS can recognize the phone across Bluetooth address rotation.</p></div>
+      <div class="feature"><div class="ico">📶</div><h3>Smart by default</h3><p>Choose Conservative, Balanced, or Fast. Amado filters spikes, learns a baseline, and handles sudden signal loss safely.</p></div>
+      <div class="feature"><div class="ico">🎚️</div><h3>Manual when you want it</h3><p>Switch to Manual for direct control over the RSSI threshold, confirmation delay, and smoothing window.</p></div>
     </div>
   </div>
 </section>
@@ -106,10 +106,10 @@
   <div class="wrap">
     <p class="eyebrow">A narrow, authenticated capability</p>
     <h2>It can lock. It cannot unlock.</h2>
-    <p class="sub">QR pairing provisions a 256-bit secret. Every command carries an HMAC, fresh timestamp, and one-time nonce.</p>
+    <p class="sub">QR pairing provisions a 256-bit secret. Every command and response is signed, fresh, and bound to the original request.</p>
     <div class="features">
       <div class="feature"><div class="ico">🔑</div><h3>Keychain on Mac</h3><p>The pairing secret is kept out of config.toml and stored in the macOS Keychain.</p></div>
-      <div class="feature"><div class="ico">🛡️</div><h3>Replay resistant</h3><p>HMAC-SHA256 authenticates commands. Timestamp and nonce checks reject stale or duplicated requests.</p></div>
+      <div class="feature"><div class="ico">🛡️</div><h3>Replay resistant</h3><p>HMAC-SHA256 authenticates both directions. Timestamp and nonce checks reject stale, duplicated, or mismatched messages.</p></div>
       <div class="feature"><div class="ico">🏠</div><h3>Loopback remote listener</h3><p>The tunnel-facing HTTP server binds only to 127.0.0.1, not directly to the LAN.</p></div>
     </div>
     <div class="cta"><a class="btn btn-link" href="https://github.com/PangMo5/Amado/blob/main/docs/SECURITY.md">Read the security model&nbsp;&rsaquo;</a></div>

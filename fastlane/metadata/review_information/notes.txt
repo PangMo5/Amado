@@ -5,6 +5,7 @@ Review steps:
 2. Install and open the Mac app.
 3. Choose Show pairing code in the Amado menu bar menu.
 4. In the iPhone app, tap Scan pairing QR and scan the code.
-5. Tap the paired Mac to lock it.
+5. The paired row shows the Mac's current Locked or Unlocked state. Pull to refresh if needed.
+6. Tap the paired Mac to lock it. The app reports whether it was already locked or became locked.
 
-The one-tap lock action is available in the iPhone app, Apple Watch app, Home Screen widget, and Control Center. Bluetooth proximity auto-lock is configured and performed by the Mac app, so it does not require the iPhone app to remain open.
+The one-tap lock action is available in the iPhone app, Apple Watch app, Home Screen widget, and Control Center. Widget and Control Center actions update with progress or result feedback. The Home Screen widget also has a refresh button that reads the Mac's current lock state. Bluetooth proximity auto-lock is configured and performed by the Mac app, so it does not require the iPhone app to remain open.

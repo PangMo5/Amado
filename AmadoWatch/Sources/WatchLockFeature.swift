@@ -43,8 +43,17 @@ struct WatchLockFeature {
         state.status = "Locking \(mac.name)…"
         return .run { send in
           do {
-            try await phoneLink.sendLock(id)
-            await send(.lockResult(macID: id, message: "Sent ✓"))
+            let outcome = try await phoneLink.sendLock(id)
+            let message =
+              switch outcome {
+              case .alreadyLocked: "\(mac.name) is already locked"
+              case .lockRequested:
+                "Lock requested, but confirmation was unavailable"
+              case .locked: "Locked \(mac.name) ✓"
+              case .helloAccepted,
+                   .unlocked: "Unexpected Mac response"
+              }
+            await send(.lockResult(macID: id, message: message))
           } catch {
             await send(.lockResult(macID: id, message: error.localizedDescription))
           }

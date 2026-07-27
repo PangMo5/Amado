@@ -19,6 +19,7 @@ public enum AmadoService {
   /// HTTP paths the agent's server exposes (also the remote client's routes).
   public static let lockPath = "lock"
   public static let helloPath = "hello"
+  public static let statusPath = "status"
   /// Unauthenticated connectivity probe: returns 200 so a user can confirm their
   /// tunnel actually reaches the running agent. Never locks.
   public static let healthPath = "health"
@@ -30,4 +31,9 @@ public enum AmadoService {
   /// App Group shared by the iOS app and its widget/control extensions, so a
   /// widget can read the paired Macs the app stored. (macOS doesn't use it.)
   public static let appGroup = "group.dev.PangMo5.Amado"
+
+  /// Stable identifiers used to reload the Home Screen widget and Control
+  /// Center control after an App Intent writes user-visible feedback.
+  public static let lockWidgetKind = "dev.PangMo5.Amado.LockWidget"
+  public static let lockControlKind = "dev.PangMo5.Amado.LockControl"
 }

@@ -18,8 +18,14 @@ automatically.
 
 - **One tap, everywhere:** Lock from the iPhone app, Apple Watch, a Home
   Screen widget, or Control Center.
+- **Verified feedback:** Each one-tap control tells you whether the Mac was
+  already locked, became locked, or accepted the request without confirming
+  the state transition. Control Center uses native momentary status text, while
+  the Home Screen widget updates its own icon and message and can refresh the
+  Mac's current status on demand.
 - **Automatic when you leave:** Bluetooth proximity lets the Mac lock itself
-  when you walk away with your iPhone.
+  when you walk away with your iPhone. Smart detection is the default; Manual
+  mode keeps direct RSSI, delay, and smoothing controls.
 - **Fast on your LAN:** Bonjour discovery and a direct authenticated command,
   with no account or hosted service.
 - **Remote when you choose:** Bring your own HTTPS tunnel. Amado never proxies
@@ -39,7 +45,10 @@ Nearby iPhone ───────── Bluetooth proximity ──────
 The iPhone client tries the local network first and uses the paired Mac's
 optional tunnel only when LAN delivery is unavailable. The tunnel forwards to a
 loopback-only HTTP listener on `127.0.0.1:51521`. Use a control when you want an
-immediate lock. Enable proximity auto-lock when walking away should be enough.
+immediate lock. The same authenticated connection returns the Mac's observed
+lock state, and the iPhone app can refresh that state on demand. Enable
+proximity auto-lock when you want walking away to be enough; it runs on the Mac
+and does not require the iPhone app to stay open.
 
 See [Security](docs/SECURITY.md) for the trust model and protocol boundaries.
 
@@ -53,8 +62,8 @@ brew install --cask PangMo5/tap/amado
 
 Or download it from [GitHub Releases](https://github.com/PangMo5/Amado/releases).
 Sparkle checks for updates in the background, and **Check for Updates…** is
-available from the menu-bar item. The companion iPhone app, widget, and Watch
-app are distributed together through TestFlight.
+available from the menu-bar item and **Settings › About**. The companion
+iPhone app, widget, and Watch app are distributed together through TestFlight.
 
 1. Launch Amado on the Mac and enable **Launch at Login** if wanted.
 2. Open **Settings › Pairing › Reveal pairing code**.
@@ -72,9 +81,11 @@ reloaded when the file changes. Pairing secrets stay in Keychain.
 | --- | ---: | --- |
 | `remote_host` | `""` | Public hostname of your HTTPS tunnel. Empty is LAN-only. |
 | `proximity_auto_lock` | `false` | Lock when the selected iPhone leaves |
-| `proximity_far_rssi` | `-56` | Far threshold in dBm |
-| `proximity_grace_seconds` | `2` | Time beyond the threshold before locking |
-| `proximity_smoothing` | `3` | Number of RSSI samples to average |
+| `proximity_mode` | `"smart"` | Adaptive detection, or `"manual"` for direct RSSI controls |
+| `proximity_sensitivity` | `"balanced"` | Smart-mode reaction preset |
+| `proximity_far_rssi` | `-56` | Manual-mode far threshold in dBm |
+| `proximity_grace_seconds` | `2` | Manual-mode threshold confirmation time |
+| `proximity_smoothing` | `3` | Manual-mode RSSI averaging window |
 
 See the complete [`config.toml` reference](docs/CONFIGURATION.md),
 [pairing guide](docs/PAIRING.md), [remote access guide](docs/REMOTE_ACCESS.md),

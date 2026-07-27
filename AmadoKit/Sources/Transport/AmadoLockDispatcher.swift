@@ -16,28 +16,37 @@ import Foundation
 /// reducer, the widget/control intent, and (via the phone relay) the watch, so
 /// they all behave identically.
 public enum AmadoLockDispatcher {
-  public static func dispatch(_ command: LockCommand, to mac: PairedMac) async throws {
+  public static func dispatch(
+    _ command: LockCommand,
+    to mac: PairedMac,
+  ) async throws -> LockCommandResponse {
     guard let secret = mac.secret else { throw LockSenderError.notPaired }
 
     if await LocalNetwork.isAvailable() {
       do {
-        try await LANLockSender().send(
+        return try await LANLockSender().send(
           command,
           toMacNamed: mac.name.isEmpty ? nil : mac.name,
           secret: secret,
         )
-        return
       } catch {
+        if
+          let senderError = error as? LockSenderError,
+          senderError == .responseUnavailable || senderError == .invalidResponse
+        {
+          // The request reached the Mac, so retrying it over another transport
+          // would only create an ambiguous duplicate.
+          throw senderError
+        }
         // Not found on this network — try the tunnel if the Mac has one,
         // otherwise surface the LAN failure.
         guard let remoteURL = mac.remoteURL else { throw error }
-        try await RemoteLockSender.send(command, to: remoteURL, secret: secret)
-        return
+        return try await RemoteLockSender.send(command, to: remoteURL, secret: secret)
       }
     }
 
     // No usable LAN (e.g. on cellular): the tunnel is the only way in.
     guard let remoteURL = mac.remoteURL else { throw LockSenderError.notReachable }
-    try await RemoteLockSender.send(command, to: remoteURL, secret: secret)
+    return try await RemoteLockSender.send(command, to: remoteURL, secret: secret)
   }
 }

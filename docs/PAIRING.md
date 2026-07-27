@@ -1,9 +1,10 @@
 # Pairing
 
-Pairing transfers an authenticated lock capability from the Mac to the iPhone.
-The Apple Watch, widget, and Control Center use the iPhone's paired-Mac data.
-This powers Amado's one-tap path. Walk-away auto-lock is configured separately
-on the Mac, and both paths trigger the same lock-only action.
+Pairing transfers an authenticated lock-and-status capability from the Mac to
+the iPhone. The Apple Watch, widget, and Control Center use the iPhone's
+paired-Mac data. This powers Amado's one-tap path and its verified result.
+Walk-away auto-lock is configured separately on the Mac, and neither path can
+unlock the Mac.
 
 ## Pair an iPhone
 
@@ -29,7 +30,10 @@ recovery steps for a compromised secret.
 
 ## The iPhone cannot find the Mac
 
-- Confirm both devices are on the same local network.
+- For direct LAN access, confirm both devices are on the same local network.
 - Allow Local Network access for Amado in system privacy settings.
 - Confirm the Mac menu-bar agent reports **Listening**.
 - Guest Wi-Fi and client isolation can block Bonjour and direct device traffic.
+- Away from that network, configure an HTTPS tunnel in **Settings › Remote
+  access**, test it on the Mac, and pair again so the iPhone receives the
+  hostname.

@@ -26,4 +26,7 @@ public enum WatchMessage {
   public static let actionKey = "action"
   public static let lockAction = "lock"
   public static let macIDKey = "macID"
+  /// sendMessage reply keys (phone → watch).
+  public static let outcomeKey = "outcome"
+  public static let errorKey = "error"
 }

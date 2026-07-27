@@ -14,6 +14,8 @@ public enum LockCodecError: Error, Equatable, Sendable {
   case badSignature
   /// Command was issued too far from the agent's clock (replay / skew).
   case stale(age: TimeInterval)
+  /// A valid response belongs to a different request.
+  case mismatchedRequestNonce
 }
 
 // MARK: - LockCodec
@@ -69,6 +71,67 @@ public enum LockCodec {
       throw LockCodecError.stale(age: age)
     }
     return command
+  }
+}
+
+// MARK: - LockResponseCodec
+
+/// Signs and verifies Mac responses using the same pairing secret as commands.
+public enum LockResponseCodec {
+  public static func encode(
+    _ response: LockCommandResponse,
+    secret: PairingSecret,
+  ) throws -> Data {
+    let responseData = try canonicalEncoder.encode(response)
+    let signature = HMAC<SHA256>.authenticationCode(
+      for: responseData,
+      using: secret.symmetricKey,
+    )
+    let envelope = LockResponseEnvelope(
+      version: AmadoService.protocolVersion,
+      responseData: responseData,
+      signature: Data(signature),
+    )
+    return try JSONEncoder().encode(envelope)
+  }
+
+  public static func decode(
+    _ data: Data,
+    secret: PairingSecret,
+    matching command: LockCommand,
+    now: Date = Date(),
+  ) throws -> LockCommandResponse {
+    guard let envelope = try? JSONDecoder().decode(LockResponseEnvelope.self, from: data) else {
+      throw LockCodecError.malformed
+    }
+    guard envelope.version == AmadoService.protocolVersion else {
+      throw LockCodecError.unsupportedVersion(envelope.version)
+    }
+    guard
+      HMAC<SHA256>.isValidAuthenticationCode(
+        envelope.signature,
+        authenticating: envelope.responseData,
+        using: secret.symmetricKey,
+      )
+    else {
+      throw LockCodecError.badSignature
+    }
+    guard
+      let response = try? canonicalDecoder.decode(
+        LockCommandResponse.self,
+        from: envelope.responseData,
+      )
+    else {
+      throw LockCodecError.malformed
+    }
+    let age = now.timeIntervalSince(response.respondedAt)
+    guard abs(age) <= LockCommandResponse.freshnessWindow else {
+      throw LockCodecError.stale(age: age)
+    }
+    guard response.commandNonce == command.nonce else {
+      throw LockCodecError.mismatchedRequestNonce
+    }
+    return response
   }
 }
 

@@ -8,15 +8,19 @@ import OSLog
 /// Locks the Mac by dropping it to the login window immediately.
 @DependencyClient
 struct ScreenLockerClient: Sendable {
+  var isLocked: @Sendable () -> Bool = { false }
   var lock: @Sendable () -> Void
 }
 
 // MARK: DependencyKey
 
 extension ScreenLockerClient: DependencyKey {
-  static let liveValue = ScreenLockerClient(lock: lockScreenImmediately)
+  static let liveValue = ScreenLockerClient(
+    isLocked: MacSessionState.isLocked,
+    lock: lockScreenImmediately,
+  )
 
-  static let testValue = ScreenLockerClient(lock: { })
+  static let testValue = ScreenLockerClient(isLocked: { false }, lock: { })
   static let previewValue = testValue
 }
 

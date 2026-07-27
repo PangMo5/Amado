@@ -63,7 +63,8 @@ struct AppFeature {
   enum Action {
     case task
     case listenerStarted
-    case received(Data)
+    case received(IncomingLockRequest)
+    case lockConfirmationFinished(origin: String, confirmed: Bool)
     case lockNowTapped
     case checkForUpdatesTapped
     case regenerateSecretTapped
@@ -74,6 +75,9 @@ struct AppFeature {
     case remoteTestFinished(String)
     case proximityAutoLockToggled(Bool)
     case proximityDeviceSelected(DiscoveredDevice)
+    case proximityModeChanged(ProximityDetectionMode)
+    case proximitySensitivityChanged(ProximitySensitivity)
+    case proximityRecalibrateTapped
     case proximityFarRSSIChanged(Int)
     case proximityGraceChanged(Double)
     case proximitySmoothingChanged(Int)
@@ -81,7 +85,7 @@ struct AppFeature {
     case proximityDevicesUpdated([DiscoveredDevice])
     case proximityStatusChanged(ProximityStatus)
     case proximityConfigChanged(AmadoConfig)
-    case proximityFarDetected
+    case proximityFarDetected(ProximityDecisionEngine.LockReason)
   }
 
   @Dependency(\.lockListener) var lockListener
@@ -91,6 +95,7 @@ struct AppFeature {
   @Dependency(\.secretStore) var secretStore
   @Dependency(\.screenLocker) var screenLocker
   @Dependency(\.updater) var updater
+  @Dependency(\.continuousClock) var clock
   @Dependency(\.date) var date
   @Dependency(\.uuid) var uuid
 
@@ -124,28 +129,27 @@ struct AppFeature {
         let cfg = state.config
         state.appliedProximityKey = proximityKey(cfg)
         let sharedConfig = state.$config
+        let proximityConfiguration = proximityMonitorConfiguration(cfg)
         // Listen on both transports; `.received` verifies + dedups by nonce, so
         // a command arriving via LAN *and* the tunnel locks at most once.
         return .merge(
           .run { send in
             try await lockListener.start()
             await send(.listenerStarted)
-            for await data in lockListener.incoming() {
-              await send(.received(data))
+            for await request in lockListener.incoming() {
+              await send(.received(request))
             }
           },
           .run { send in
             await remoteListener.start()
-            for await data in remoteListener.incoming() {
-              await send(.received(data))
+            for await request in remoteListener.incoming() {
+              await send(.received(request))
             }
           },
           .run { send in
-            if cfg.proximityAutoLock, let id = UUID(uuidString: cfg.proximityDeviceID) {
-              proximityLock.monitor(id, cfg.proximityFarRSSI, cfg.proximityGraceSeconds, cfg.proximitySmoothing)
-            }
-            for await _ in proximityLock.farEvents() {
-              await send(.proximityFarDetected)
+            proximityLock.monitor(proximityConfiguration)
+            for await reason in proximityLock.farEvents() {
+              await send(.proximityFarDetected(reason))
             }
           },
           .run { send in
@@ -175,28 +179,75 @@ struct AppFeature {
         state.isListening = true
         return .none
 
-      case .received(let data):
+      case .received(let request):
         guard let secret = state.pairingSecret else {
           state.record("Command ignored — not paired yet", kind: .rejected, id: uuid(), at: date.now)
           return .none
         }
         do {
-          let command = try LockCodec.decode(data, secret: secret, now: date.now)
+          let command = try LockCodec.decode(request.data, secret: secret, now: date.now)
           guard !state.recentNonces.contains(command.nonce) else {
             state.record("Replay from \(command.origin) ignored", kind: .rejected, id: uuid(), at: date.now)
             return .none
           }
           state.remember(command.nonce)
+          let isLocked = screenLocker.isLocked()
           switch command.action {
           case .lock:
-            state.record("Locked — command from \(command.origin)", kind: .locked, id: uuid(), at: date.now)
-            return .run { _ in screenLocker.lock() }
+            if isLocked {
+              let response = LockCommandResponse(
+                commandNonce: command.nonce,
+                outcome: .alreadyLocked,
+                respondedAt: date.now,
+              )
+              let responseData = try LockResponseCodec.encode(response, secret: secret)
+              state.record(
+                "Already locked — command from \(command.origin)",
+                kind: .locked,
+                id: uuid(),
+                at: date.now,
+              )
+              return .run { _ in request.respond(with: responseData) }
+            }
+            return .run { send in
+              screenLocker.lock()
+              var confirmed = screenLocker.isLocked()
+              for _ in 0..<20 where !confirmed {
+                try? await clock.sleep(for: .milliseconds(100))
+                confirmed = screenLocker.isLocked()
+              }
+              let response = LockCommandResponse(
+                commandNonce: command.nonce,
+                outcome: confirmed ? .locked : .lockRequested,
+                respondedAt: date.now,
+              )
+              guard let responseData = try? LockResponseCodec.encode(response, secret: secret) else {
+                return
+              }
+              request.respond(with: responseData)
+              await send(.lockConfirmationFinished(origin: command.origin, confirmed: confirmed))
+            }
 
           case .hello:
             // Pairing handshake — prove the device holds the secret, don't lock.
+            let response = LockCommandResponse.responding(
+              to: command,
+              isLocked: isLocked,
+              now: date.now,
+            )
+            let responseData = try LockResponseCodec.encode(response, secret: secret)
             state.justPairedWith = command.origin
             state.record("Paired with \(command.origin) ✓", kind: .paired, id: uuid(), at: date.now)
-            return .none
+            return .run { _ in request.respond(with: responseData) }
+
+          case .status:
+            let response = LockCommandResponse.responding(
+              to: command,
+              isLocked: isLocked,
+              now: date.now,
+            )
+            let responseData = try LockResponseCodec.encode(response, secret: secret)
+            return .run { _ in request.respond(with: responseData) }
           }
         } catch let error as LockCodecError {
           state.record("Rejected: \(error.reason)", kind: .rejected, id: uuid(), at: date.now)
@@ -205,6 +256,17 @@ struct AppFeature {
           state.record("Rejected: malformed command", kind: .rejected, id: uuid(), at: date.now)
           return .none
         }
+
+      case .lockConfirmationFinished(let origin, let confirmed):
+        state.record(
+          confirmed
+            ? "Locked — command from \(origin)"
+            : "Lock requested but not confirmed — command from \(origin)",
+          kind: .locked,
+          id: uuid(),
+          at: date.now,
+        )
+        return .none
 
       case .lockNowTapped:
         state.record("Locked — manual test", kind: .locked, id: uuid(), at: date.now)
@@ -257,9 +319,14 @@ struct AppFeature {
         state.remoteTestMessage = message
         return .none
 
-      case .proximityFarDetected:
+      case .proximityFarDetected(let reason):
         let name = state.config.proximityDeviceName.isEmpty ? "your iPhone" : state.config.proximityDeviceName
-        state.record("Locked — \(name) left", kind: .locked, id: uuid(), at: date.now)
+        state.record(
+          "Locked — \(name) left (\(reason.activityDescription))",
+          kind: .locked,
+          id: uuid(),
+          at: date.now,
+        )
         return .run { _ in screenLocker.lock() }
 
       case .proximityStatusChanged(let proximityStatus):
@@ -278,6 +345,17 @@ struct AppFeature {
         }
         return .none
 
+      case .proximityModeChanged(let mode):
+        state.$config.withLock { $0.proximityMode = mode }
+        return .none
+
+      case .proximitySensitivityChanged(let sensitivity):
+        state.$config.withLock { $0.proximitySensitivity = sensitivity }
+        return .none
+
+      case .proximityRecalibrateTapped:
+        return .run { _ in proximityLock.recalibrate() }
+
       case .proximityFarRSSIChanged(let rssi):
         state.$config.withLock { $0.proximityFarRSSI = rssi }
         return .none
@@ -294,9 +372,9 @@ struct AppFeature {
         let key = proximityKey(newConfig)
         guard key != state.appliedProximityKey else { return .none }
         state.appliedProximityKey = key
-        let id = newConfig.proximityAutoLock ? UUID(uuidString: newConfig.proximityDeviceID) : nil
+        let configuration = proximityMonitorConfiguration(newConfig)
         return .run { _ in
-          proximityLock.monitor(id, newConfig.proximityFarRSSI, newConfig.proximityGraceSeconds, newConfig.proximitySmoothing)
+          proximityLock.monitor(configuration)
         }
 
       case .proximityScanToggled(let on):
@@ -316,9 +394,37 @@ struct AppFeature {
 
   /// The proximity fields that, when changed, require re-issuing monitor().
   private func proximityKey(_ config: AmadoConfig) -> String {
-    "\(config.proximityAutoLock)|\(config.proximityDeviceID)|\(config.proximityFarRSSI)|\(config.proximityGraceSeconds)|\(config.proximitySmoothing)"
+    """
+    \(config.proximityAutoLock)|\(config.proximityDeviceID)|\(config.proximityMode.rawValue)|\
+    \(config.proximitySensitivity.rawValue)|\(config.proximityFarRSSI)|\
+    \(config.proximityGraceSeconds)|\(config.proximitySmoothing)
+    """
   }
 
+  private func proximityMonitorConfiguration(_ config: AmadoConfig) -> ProximityMonitorConfiguration {
+    ProximityMonitorConfiguration(
+      deviceID: config.proximityAutoLock ? UUID(uuidString: config.proximityDeviceID) : nil,
+      mode: config.proximityMode,
+      sensitivity: config.proximitySensitivity,
+      manualFarRSSI: config.proximityFarRSSI,
+      manualGraceSeconds: config.proximityGraceSeconds,
+      manualSmoothing: config.proximitySmoothing,
+    )
+  }
+
+}
+
+extension ProximityDecisionEngine.LockReason {
+  fileprivate var activityDescription: String {
+    switch self {
+    case .weakSignalTrend: "weakening signal"
+    case .veryWeakSignal: "very weak signal"
+    case .signalLostAfterWeakening: "signal lost after weakening"
+    case .extendedSignalLoss: "signal unavailable while idle"
+    case .manualThreshold: "manual threshold"
+    case .manualSignalLoss: "manual signal-loss timeout"
+    }
+  }
 }
 
 // MARK: - ActivityEntry
@@ -344,6 +450,7 @@ extension LockCodecError {
     case .unsupportedVersion(let version): "unsupported protocol v\(version)"
     case .badSignature: "bad signature (wrong pairing secret?)"
     case .stale(let age): "stale by \(Int(age))s"
+    case .mismatchedRequestNonce: "response/request nonce mismatch"
     }
   }
 }

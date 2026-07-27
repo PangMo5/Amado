@@ -1,6 +1,6 @@
 # Privacy
 
-Last updated: July 17, 2026
+Last updated: July 27, 2026
 
 Amado does not collect personal data, use analytics or advertising SDKs, track
 you across apps or websites, or operate a hosted relay service.
@@ -10,6 +10,10 @@ you across apps or websites, or operate a hosted relay service.
 - **Pairing data:** The Mac stores the pairing secret in Keychain. The iPhone
   stores paired Mac details in its App Group container so the app, widget,
   Control Center control, and Apple Watch app can use the same Macs.
+- **Recent Widget and Control feedback:** The iPhone App Group stores only the
+  latest Widget status or lock result, or Control Center lock result, so that
+  system surface can redraw. It is not an activity history and is ignored after
+  five minutes.
 - **Configuration:** The Mac stores non-sensitive settings locally in
   `config.toml`.
 - **Developer access:** PangMo5 does not receive this data.
@@ -27,13 +31,20 @@ secret.
   policy. Amado does not provide or operate the tunnel.
 - **No Amado account:** There is no Amado account, cloud database, or developer
   server receiving lock commands.
+- **Lock-state responses:** When a paired control sends a command, the iPhone
+  app refreshes status, or the Widget refresh button is used, the Mac returns
+  whether its current login session is locked over that same direct or
+  user-operated tunnel connection. Amado does not persist a lock-state history
+  or send it to PangMo5.
 
 ## Bluetooth proximity
 
 Bluetooth proximity auto-lock runs on the Mac. The Mac observes the selected
-iPhone's Bluetooth signal to decide when to lock. Amado does not use location
-services, collect a location history, or send Bluetooth observations to
-PangMo5.
+iPhone's Bluetooth signal to decide when to lock. In Smart mode, it also checks
+how long the Mac has been idle to avoid an ambiguous lock during recent
+keyboard, pointer, or trackpad use. Amado does not capture input content, use
+location services, collect a location history, persist proximity observations,
+or send Bluetooth or input-activity observations to PangMo5.
 
 ## Camera
 
