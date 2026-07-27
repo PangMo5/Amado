@@ -2,7 +2,6 @@ default_platform(:ios)
 
 IOS_APP_IDENTIFIER = "dev.PangMo5.Amado.iOS"
 IOS_DEVELOPMENT_TEAM = "4BHXT8RHFR"
-IOS_PRICE_TIER = 0
 IOS_ACCOUNT_HOLDER = ["Kwangmin", "Bae"].freeze
 PROJECT_ROOT = File.expand_path("..", __dir__)
 DEFAULT_TESTFLIGHT_EXTERNAL_GROUPS = ["External Testers"].freeze
@@ -43,6 +42,93 @@ end
 def app_store_app
   Spaceship::ConnectAPI::App.find(IOS_APP_IDENTIFIER) ||
     UI.user_error!("Create #{IOS_APP_IDENTIFIER} on the App Store Connect website first")
+end
+
+def ensure_initial_free_app_price
+  app = app_store_app
+  client = Spaceship::ConnectAPI.tunes_request_client
+
+  begin
+    schedule = client.get("v1/apps/#{app.id}/appPriceSchedule")
+    if schedule.body["data"]
+      UI.success("App pricing is already configured")
+      return
+    end
+  rescue Spaceship::UnexpectedResponse => error
+    raise unless error.message.match?(/404|not found|does not exist/i)
+  end
+
+  price_points = client.get(
+    "v1/apps/#{app.id}/appPricePoints",
+    {
+      filter: { territory: "USA" },
+      fields: { appPricePoints: "customerPrice" },
+      limit: 200,
+    },
+  )
+  free_price_point = price_points.body.fetch("data").find do |price_point|
+    price_point.dig("attributes", "customerPrice").to_f.zero?
+  end
+  UI.user_error!("App Store Connect returned no free USA price point") unless free_price_point
+
+  local_price_id = "${amado-free-price}"
+  client.post(
+    "v1/appPriceSchedules",
+    {
+      data: {
+        type: "appPriceSchedules",
+        relationships: {
+          app: {
+            data: { type: "apps", id: app.id },
+          },
+          baseTerritory: {
+            data: { type: "territories", id: "USA" },
+          },
+          manualPrices: {
+            data: [{ type: "appPrices", id: local_price_id }],
+          },
+        },
+      },
+      included: [
+        {
+          type: "appPrices",
+          id: local_price_id,
+          attributes: { startDate: nil },
+          relationships: {
+            appPricePoint: {
+              data: { type: "appPricePoints", id: free_price_point.fetch("id") },
+            },
+          },
+        },
+      ],
+    },
+  )
+  UI.success("Configured the initial App Store price as Free")
+end
+
+def ensure_no_data_collected_privacy
+  app = app_store_app
+  usages = Spaceship::ConnectAPI::AppDataUsage.all(
+    app_id: app.id,
+    includes: "category,grouping,purpose,dataProtection",
+    limit: 500,
+  )
+
+  if usages.empty?
+    Spaceship::ConnectAPI::AppDataUsage.create(
+      app_id: app.id,
+      app_data_usage_protection_id:
+        Spaceship::ConnectAPI::AppDataUsageDataProtection::ID::DATA_NOT_COLLECTED,
+    )
+  elsif usages.count != 1 || !usages.first.is_not_collected?
+    UI.user_error!(
+      "Existing App Privacy answers conflict with Amado's no-data-collected declaration",
+    )
+  end
+
+  publish_state = Spaceship::ConnectAPI::AppDataUsagesPublishState.get(app_id: app.id)
+  publish_state.publish! unless publish_state.published
+  UI.success("Published App Privacy as no data collected")
 end
 
 def changelog_for(version)
@@ -153,7 +239,8 @@ platform :ios do
       UI.user_error!("Add App Store screenshots under fastlane/screenshots") if screenshots.empty?
     end
 
-    app_store_app
+    ensure_initial_free_app_price
+    ensure_no_data_collected_privacy
     upload_to_app_store(
       api_key: options.fetch(:api_key),
       app_identifier: IOS_APP_IDENTIFIER,
@@ -163,7 +250,6 @@ platform :ios do
       screenshots_path: project_path("fastlane", "screenshots"),
       release_notes: { "en-US" => options.fetch(:release_notes) },
       app_review_information: app_store_review_information,
-      price_tier: IOS_PRICE_TIER,
       skip_binary_upload: true,
       skip_screenshots: !upload_screenshots,
       sync_screenshots: upload_screenshots,
@@ -426,7 +512,8 @@ platform :ios do
     end
 
     release = build_release(version: options[:version], sync_metadata: false)
-    app_store_app
+    ensure_initial_free_app_price
+    ensure_no_data_collected_privacy
     upload_to_app_store(
       api_key: release.fetch(:api_key),
       app_identifier: IOS_APP_IDENTIFIER,
@@ -437,7 +524,6 @@ platform :ios do
       screenshots_path: project_path("fastlane", "screenshots"),
       release_notes: { "en-US" => release.fetch(:release_notes) },
       app_review_information: app_store_review_information,
-      price_tier: IOS_PRICE_TIER,
       skip_binary_upload: false,
       skip_screenshots: false,
       sync_screenshots: true,
