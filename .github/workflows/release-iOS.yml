@@ -33,7 +33,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: release-ios-${{ inputs.tag || github.ref }}
+  group: release-ios-${{ inputs.distribution == 'metadata' && 'metadata' || 'binary' }}-${{ inputs.tag || github.ref }}
   cancel-in-progress: false
 
 jobs:
