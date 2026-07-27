@@ -5,7 +5,7 @@ import Foundation
 /// How Amado decides that the monitored iPhone left.
 public enum ProximityDetectionMode: String, CaseIterable, Codable, Hashable, Sendable {
   /// Learns the nearby signal and combines robust RSSI filtering, its trend,
-  /// recent Mac input, and signal-loss context.
+  /// weak-signal consistency, and signal-loss context.
   case smart
   /// Uses the user-provided RSSI threshold, grace, and moving-average window.
   case manual
