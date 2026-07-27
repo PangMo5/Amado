@@ -215,24 +215,39 @@ jobs:
 
           output = [f"<h2>Amado {html.escape(version)}</h2>"]
           in_list = False
+          pending_item = []
+
+          def flush_item():
+              global pending_item
+              if pending_item:
+                  output.append("<li>" + inline(" ".join(pending_item)) + "</li>")
+                  pending_item = []
+
+          def close_list():
+              global in_list
+              flush_item()
+              if in_list:
+                  output.append("</ul>")
+                  in_list = False
+
           for line in body:
               if line.startswith("### "):
-                  if in_list:
-                      output.append("</ul>")
-                      in_list = False
+                  close_list()
                   output.append("<h3>" + inline(line[4:].strip()) + "</h3>")
               elif line.startswith("- "):
                   if not in_list:
                       output.append("<ul>")
                       in_list = True
-                  output.append("<li>" + inline(line[2:].strip()) + "</li>")
+                  flush_item()
+                  pending_item = [line[2:].strip()]
               elif line.strip():
                   if in_list:
-                      output.append("</ul>")
-                      in_list = False
-                  output.append("<p>" + inline(line.strip()) + "</p>")
-          if in_list:
-              output.append("</ul>")
+                      pending_item.append(line.strip())
+                  else:
+                      output.append("<p>" + inline(line.strip()) + "</p>")
+              else:
+                  close_list()
+          close_list()
 
           appcast = os.environ["APPCAST"]
           xml = open(appcast, encoding="utf-8").read()
@@ -251,8 +266,26 @@ jobs:
         run: |
           set -euo pipefail
           NOTES="$RUNNER_TEMP/release-notes.md"
-          awk -v h="## ${VERSION} " 'index($0, h) == 1 { g = 1; next } g && /^## / { exit } g { print }' \
-            CHANGELOG.md | sed 's/^### /## /' > "$NOTES"
+          python3 - "$VERSION" "$NOTES" <<'PY'
+          import sys
+
+          version, destination = sys.argv[1:]
+          lines = open("CHANGELOG.md", encoding="utf-8").read().splitlines()
+          body = []
+          collecting = False
+          for line in lines:
+              if line.startswith(f"## {version} "):
+                  collecting = True
+                  continue
+              if collecting and line.startswith("## "):
+                  break
+              if collecting:
+                  if line.startswith("  ") and body and body[-1].startswith("- "):
+                      body[-1] += " " + line.strip()
+                  else:
+                      body.append(line.replace("### ", "## ", 1) if line.startswith("### ") else line)
+          open(destination, "w", encoding="utf-8").write("\n".join(body).strip() + "\n")
+          PY
           if [ ! -s "$NOTES" ]; then
             echo "See the [changelog](https://github.com/${REPO}/blob/main/CHANGELOG.md)." > "$NOTES"
           fi
