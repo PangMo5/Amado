@@ -1,8 +1,8 @@
 name: Release
 
 # Push a tag such as v0.1.0 to build, sign, notarize, and publish the macOS
-# agent. The workflow also signs the archive for Sparkle and deploys the site
-# with the new appcast.xml.
+# agent. The workflow also signs the archive for Sparkle, then dispatches the
+# dedicated site workflow so Pages receives a deployment from the main branch.
 on:
   push:
     tags:
@@ -15,9 +15,8 @@ on:
         type: string
 
 permissions:
+  actions: write
   contents: write
-  pages: write
-  id-token: write
 
 concurrency:
   group: release-${{ inputs.tag || github.ref }}
@@ -339,31 +338,12 @@ jobs:
           git commit -m "amado ${VERSION}"
           git push
 
-      - name: Assemble GitHub Pages site
+      # A tag and its main-branch commit can share GITHUB_SHA. Deploying Pages
+      # directly from both runs reuses pages_build_version and can report
+      # success without replacing the earlier artifact. A workflow_dispatch of
+      # the dedicated site workflow avoids that collision and always downloads
+      # the appcast from the GitHub Release published above.
+      - name: Deploy website with release appcast
         env:
-          VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          set -euo pipefail
-          SITE="$RUNNER_TEMP/site"
-          mkdir -p "$SITE"
-          cp web/*.html web/*.css "$SITE/"
-          sed "s/__VERSION__/${VERSION}/g" web/index.html > "$SITE/index.html"
-          cp Amado/Resources/Assets.xcassets/AppIcon.appiconset/icon_1024.png "$SITE/icon.png"
-          cp "$RUNNER_TEMP/release/appcast.xml" "$SITE/appcast.xml"
-          BUST="${GITHUB_SHA:0:8}"
-          sed -i.bak "s#\"./style.css\"#\"./style.css?v=${BUST}\"#g" "$SITE"/*.html
-          rm -f "$SITE"/*.html.bak
-
-      - uses: actions/upload-pages-artifact@v5
-        with:
-          path: ${{ runner.temp }}/site
-
-  deploy-pages:
-    needs: release
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v5
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run deploy-site.yml --ref main
