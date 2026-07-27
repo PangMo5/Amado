@@ -108,6 +108,13 @@ end
 
 def ensure_no_data_collected_privacy
   app = app_store_app
+  app_response = Spaceship::ConnectAPI.tunes_request_client.get("v1/apps/#{app.id}")
+  privacy_relationships = app_response.body
+    .dig("data", "relationships")
+    .keys
+    .grep(/data|privacy|usage|declaration/i)
+    .sort
+  UI.message("Current App Privacy relationships: #{privacy_relationships.join(', ')}")
   usages = Spaceship::ConnectAPI::AppDataUsage.all(
     app_id: app.id,
     includes: "category,grouping,purpose,dataProtection",
