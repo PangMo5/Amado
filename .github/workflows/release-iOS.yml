@@ -20,6 +20,7 @@ on:
           - external
           - app_store
           - metadata
+          - submit
       build_number:
         description: "Existing TestFlight build number to reuse for external distribution"
         required: false
@@ -33,7 +34,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: release-ios-${{ inputs.distribution == 'metadata' && 'metadata' || 'binary' }}-${{ inputs.tag || github.ref }}
+  group: release-ios-${{ (inputs.distribution == 'metadata' || inputs.distribution == 'submit') && 'asc' || 'binary' }}-${{ inputs.tag || github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -50,7 +51,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ inputs.source_ref || ((inputs.distribution == 'metadata' || inputs.build_number != '') && github.ref || inputs.tag || github.ref) }}
+          ref: ${{ inputs.source_ref || ((inputs.distribution == 'metadata' || inputs.distribution == 'submit' || inputs.build_number != '') && github.ref || inputs.tag || github.ref) }}
 
       - name: Resolve iOS version
         id: version
@@ -101,7 +102,7 @@ jobs:
             AC_API_KEY_P8
             DEVELOPMENT_TEAM
           )
-          if [ "$DISTRIBUTION" != "metadata" ]; then
+          if [ "$DISTRIBUTION" != "metadata" ] && [ "$DISTRIBUTION" != "submit" ]; then
             required+=(
               KEYCHAIN_PASSWORD
               MATCH_GIT_PRIVATE_KEY
@@ -132,7 +133,7 @@ jobs:
           fi
 
       - uses: jdx/mise-action@v4
-        if: ${{ inputs.distribution != 'metadata' }}
+        if: ${{ inputs.distribution != 'metadata' && inputs.distribution != 'submit' }}
 
       - uses: ruby/setup-ruby@v1
         with:
@@ -152,14 +153,14 @@ jobs:
           printf '%s\n' "$AC_API_KEY_P8" > "$AC_API_KEY_PATH"
           echo "AC_API_KEY_PATH=$AC_API_KEY_PATH" >> "$GITHUB_ENV"
 
-          if [ "$DISTRIBUTION" != "metadata" ]; then
+          if [ "$DISTRIBUTION" != "metadata" ] && [ "$DISTRIBUTION" != "submit" ]; then
             MATCH_GIT_PRIVATE_KEY_PATH="$RUNNER_TEMP/amado-match-deploy-key"
             printf '%s\n' "$MATCH_GIT_PRIVATE_KEY" > "$MATCH_GIT_PRIVATE_KEY_PATH"
             echo "MATCH_GIT_PRIVATE_KEY=$MATCH_GIT_PRIVATE_KEY_PATH" >> "$GITHUB_ENV"
           fi
 
       - name: Ensure signing app identifiers
-        if: ${{ inputs.distribution != 'metadata' }}
+        if: ${{ inputs.distribution != 'metadata' && inputs.distribution != 'submit' }}
         env:
           AC_API_ISSUER_ID: ${{ secrets.AC_API_ISSUER_ID }}
           AC_API_KEY_ID: ${{ secrets.AC_API_KEY_ID }}

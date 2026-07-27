@@ -48,14 +48,39 @@ def ensure_initial_free_app_price
   app = app_store_app
   client = Spaceship::ConnectAPI.tunes_request_client
 
-  begin
-    schedule = client.get("v1/apps/#{app.id}/appPriceSchedule")
-    if schedule.body["data"]
-      UI.success("App pricing is already configured")
-      return
+  schedule = client.get("v1/apps/#{app.id}/appPriceSchedule").body.fetch("data")
+  schedule_id = schedule.fetch("id")
+  read_manual_price_points = lambda do
+    response = client.get(
+      "v1/appPriceSchedules/#{schedule_id}/manualPrices",
+      {
+        include: "appPricePoint",
+        fields: {
+          appPrices: "manual,startDate,endDate,appPricePoint",
+          appPricePoints: "customerPrice",
+        },
+        limit: 50,
+      },
+    ).body
+    manual_prices = response.fetch("data")
+    included_price_points = response
+      .fetch("included", [])
+      .select { |resource| resource["type"] == "appPricePoints" }
+      .to_h { |resource| [resource.fetch("id"), resource] }
+
+    manual_prices.map do |price|
+      point_id = price.dig("relationships", "appPricePoint", "data", "id")
+      point = included_price_points[point_id]
+      UI.user_error!("App Store Connect omitted a manual price point") unless point
+      point.dig("attributes", "customerPrice").to_f
     end
-  rescue Spaceship::UnexpectedResponse => error
-    raise unless error.message.match?(/404|not found|does not exist/i)
+  end
+
+  configured_prices = read_manual_price_points.call
+  unless configured_prices.empty?
+    UI.user_error!("Existing App Store pricing is not Free") unless configured_prices.all?(&:zero?)
+    UI.success("Verified App Store pricing is Free")
+    return
   end
 
   price_points = client.get(
@@ -103,41 +128,18 @@ def ensure_initial_free_app_price
       ],
     },
   )
-  UI.success("Configured the initial App Store price as Free")
+  configured_prices = read_manual_price_points.call
+  unless configured_prices == [0.0]
+    UI.user_error!("App Store Connect did not persist the initial Free price")
+  end
+  UI.success("Configured and verified the initial App Store price as Free")
 end
 
-def ensure_no_data_collected_privacy
-  app = app_store_app
-  client = Spaceship::ConnectAPI.tunes_request_client
-  candidates = [
-    "v1/appDataUsages?filter[app]=#{app.id}&limit=5",
-    "v1/apps/#{app.id}/appDataUsages?limit=5",
-    "v1/apps/#{app.id}/appDataUsagesV2?limit=5",
-    "v1/apps/#{app.id}/dataUsagesV2?limit=5",
-    "v1/appDataUsageDeclarations?filter[app]=#{app.id}&limit=5",
-    "v1/apps/#{app.id}/appPrivacyDeclarations?limit=5",
-    "v1/appDataUsagesPublishState?filter[app]=#{app.id}",
-    "v1/appDataUsagesPublishStates?filter[app]=#{app.id}",
-    "v1/dataUsagePublishStates?filter[app]=#{app.id}",
-    "v1/apps/#{app.id}/appDataUsagesPublishState",
-    "v1/apps/#{app.id}/dataUsagePublishStateV2",
-  ]
-
-  candidates.each do |path|
-    begin
-      response = client.get(path)
-      data = response.body["data"]
-      resources = data.is_a?(Array) ? data : [data].compact
-      resource_types = resources
-        .map { |resource| resource["type"] }
-        .compact
-        .uniq
-      UI.message("App Privacy probe OK #{path.split('?').first}: #{resource_types.join(', ')}")
-    rescue Spaceship::UnexpectedResponse => error
-      UI.message("App Privacy probe failed #{path.split('?').first}: #{error.message.lines.first.strip}")
-    end
-  end
-  UI.user_error!("App Privacy API discovery completed")
+def remind_manual_app_privacy
+  UI.important(
+    "App Privacy answers are web-only in the current App Store Connect API. " \
+    "Publish 'No, we do not collect data from this app' before App Review submission.",
+  )
 end
 
 def changelog_for(version)
@@ -249,7 +251,7 @@ platform :ios do
     end
 
     ensure_initial_free_app_price
-    ensure_no_data_collected_privacy
+    remind_manual_app_privacy
     upload_to_app_store(
       api_key: options.fetch(:api_key),
       app_identifier: IOS_APP_IDENTIFIER,
@@ -522,7 +524,7 @@ platform :ios do
 
     release = build_release(version: options[:version], sync_metadata: false)
     ensure_initial_free_app_price
-    ensure_no_data_collected_privacy
+    remind_manual_app_privacy
     upload_to_app_store(
       api_key: release.fetch(:api_key),
       app_identifier: IOS_APP_IDENTIFIER,
@@ -536,6 +538,36 @@ platform :ios do
       skip_binary_upload: false,
       skip_screenshots: false,
       sync_screenshots: true,
+      submit_for_review: true,
+      automatic_release: true,
+      phased_release: false,
+      submission_information: {
+        add_id_info_uses_idfa: false,
+        content_rights_contains_third_party_content: false,
+        export_compliance_uses_encryption: false,
+      },
+      precheck_include_in_app_purchases: false,
+      force: true,
+    )
+  end
+
+  desc "Submit the existing selected build for App Review without rebuilding"
+  lane :submit do |options|
+    version = options[:version].to_s
+    UI.user_error!("version is required") if version.empty?
+    validate_project_version(version)
+
+    development_team
+    api_key = connect_api_key
+    ensure_initial_free_app_price
+    remind_manual_app_privacy
+    upload_to_app_store(
+      api_key: api_key,
+      app_identifier: IOS_APP_IDENTIFIER,
+      app_version: version,
+      skip_binary_upload: true,
+      skip_metadata: true,
+      skip_screenshots: true,
       submit_for_review: true,
       automatic_release: true,
       phased_release: false,
