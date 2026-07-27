@@ -74,6 +74,9 @@ def ensure_initial_free_app_price
       UI.user_error!("App Store Connect omitted a manual price point") unless point
       point.dig("attributes", "customerPrice").to_f
     end
+  rescue Spaceship::UnexpectedResponse => error
+    raise unless error.message.match?(/does not exist|no resource/i)
+    []
   end
 
   configured_prices = read_manual_price_points.call
