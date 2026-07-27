@@ -158,6 +158,7 @@ let project = Project(
         "CURRENT_PROJECT_VERSION": SettingValue(stringLiteral: buildNumber),
         "ASSETCATALOG_COMPILER_APPICON_NAME": "AppIcon",
         "ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME": "BrandTint",
+        "TARGETED_DEVICE_FAMILY": "1",
       ]) { $1 }),
     ),
 
@@ -227,6 +228,7 @@ let project = Project(
         "MARKETING_VERSION": SettingValue(stringLiteral: iOSVersion),
         "CURRENT_PROJECT_VERSION": SettingValue(stringLiteral: buildNumber),
         "ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME": "BrandTint",
+        "TARGETED_DEVICE_FAMILY": "1",
       ]) { $1 }),
     ),
 
