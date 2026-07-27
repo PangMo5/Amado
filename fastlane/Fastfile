@@ -2,6 +2,7 @@ default_platform(:ios)
 
 IOS_APP_IDENTIFIER = "dev.PangMo5.Amado.iOS"
 IOS_DEVELOPMENT_TEAM = "4BHXT8RHFR"
+IOS_PRICE_TIER = 0
 IOS_ACCOUNT_HOLDER = ["Kwangmin", "Bae"].freeze
 PROJECT_ROOT = File.expand_path("..", __dir__)
 DEFAULT_TESTFLIGHT_EXTERNAL_GROUPS = ["External Testers"].freeze
@@ -162,6 +163,7 @@ platform :ios do
       screenshots_path: project_path("fastlane", "screenshots"),
       release_notes: { "en-US" => options.fetch(:release_notes) },
       app_review_information: app_store_review_information,
+      price_tier: IOS_PRICE_TIER,
       skip_binary_upload: true,
       skip_screenshots: !upload_screenshots,
       sync_screenshots: upload_screenshots,
@@ -435,6 +437,7 @@ platform :ios do
       screenshots_path: project_path("fastlane", "screenshots"),
       release_notes: { "en-US" => release.fetch(:release_notes) },
       app_review_information: app_store_review_information,
+      price_tier: IOS_PRICE_TIER,
       skip_binary_upload: false,
       skip_screenshots: false,
       sync_screenshots: true,
