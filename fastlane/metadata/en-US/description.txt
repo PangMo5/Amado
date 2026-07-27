@@ -8,7 +8,7 @@ Lock a paired Mac from the iPhone app, Apple Watch, a Home Screen widget, or Con
 
 WALK-AWAY AUTO-LOCK
 
-Bluetooth proximity is a primary Amado experience. Smart detection learns the normal nearby signal, filters brief spikes, follows departure trends, and considers recent Mac activity before locking. Choose Conservative, Balanced, or Fast sensitivity, or switch to Manual for direct RSSI controls. The iPhone app does not need to remain open.
+Bluetooth proximity is a primary Amado experience. Smart detection learns the normal nearby signal, filters brief spikes, follows departure trends, and locks promptly when departure confidence is high. Choose Conservative, Balanced, or Fast sensitivity, or switch to Manual for direct RSSI controls. Keyboard and pointer activity cannot postpone a confirmed departure lock, and the iPhone app does not need to remain open.
 
 LOCAL FIRST
 

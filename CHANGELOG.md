@@ -3,14 +3,23 @@
 Notable changes to the Amado macOS app are documented here. Versions follow
 semantic versioning, and the newest release appears first.
 
+## 1.0.1 (2026-07-27)
+
+- **Safer, faster Smart auto-lock:** Smart detection now combines fast and
+  stable signal filters, weak-signal consistency, departure trend, and adaptive
+  confirmation. Clear departures lock promptly while brief RSSI spikes remain
+  ignored.
+- **Owner-presence hardening:** Keyboard, pointer, and trackpad activity can no
+  longer delay a confirmed departure lock or influence baseline learning, so
+  activity by another person cannot keep the Mac unlocked after the owner
+  leaves.
+
 ## 1.0.0 (2026-07-27)
 
 - **Smarter walk-away locking:** Smart detection is now the default and learns
-  the nearby signal. It combines fast and stable filters, weak-signal
-  consistency, departure trend, and adaptive confirmation so clear departures
-  lock quickly while brief RSSI spikes remain ignored. Keyboard and pointer
-  activity cannot delay locking or influence learning. Signal loss remains
-  conservative and safely rearms after a stable return.
+  the nearby signal, rejects brief RSSI spikes, considers departure trends and
+  recent Mac activity, handles signal loss conservatively, and safely rearms
+  after a stable return.
 - **Manual controls preserved:** Switch to Manual detection to keep direct
   control over the RSSI threshold, delay, and smoothing window.
 - **Calibration and diagnostics:** Choose Conservative, Balanced, or Fast
