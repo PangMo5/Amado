@@ -108,34 +108,36 @@ end
 
 def ensure_no_data_collected_privacy
   app = app_store_app
-  app_response = Spaceship::ConnectAPI.tunes_request_client.get("v1/apps/#{app.id}")
-  privacy_relationships = app_response.body
-    .dig("data", "relationships")
-    .keys
-    .grep(/data|privacy|usage|declaration/i)
-    .sort
-  UI.message("Current App Privacy relationships: #{privacy_relationships.join(', ')}")
-  usages = Spaceship::ConnectAPI::AppDataUsage.all(
-    app_id: app.id,
-    includes: "category,grouping,purpose,dataProtection",
-    limit: 500,
-  )
+  client = Spaceship::ConnectAPI.tunes_request_client
+  candidates = [
+    "v1/appDataUsages?filter[app]=#{app.id}&limit=5",
+    "v1/apps/#{app.id}/appDataUsages?limit=5",
+    "v1/apps/#{app.id}/appDataUsagesV2?limit=5",
+    "v1/apps/#{app.id}/dataUsagesV2?limit=5",
+    "v1/appDataUsageDeclarations?filter[app]=#{app.id}&limit=5",
+    "v1/apps/#{app.id}/appPrivacyDeclarations?limit=5",
+    "v1/appDataUsagesPublishState?filter[app]=#{app.id}",
+    "v1/appDataUsagesPublishStates?filter[app]=#{app.id}",
+    "v1/dataUsagePublishStates?filter[app]=#{app.id}",
+    "v1/apps/#{app.id}/appDataUsagesPublishState",
+    "v1/apps/#{app.id}/dataUsagePublishStateV2",
+  ]
 
-  if usages.empty?
-    Spaceship::ConnectAPI::AppDataUsage.create(
-      app_id: app.id,
-      app_data_usage_protection_id:
-        Spaceship::ConnectAPI::AppDataUsageDataProtection::ID::DATA_NOT_COLLECTED,
-    )
-  elsif usages.count != 1 || !usages.first.is_not_collected?
-    UI.user_error!(
-      "Existing App Privacy answers conflict with Amado's no-data-collected declaration",
-    )
+  candidates.each do |path|
+    begin
+      response = client.get(path)
+      data = response.body["data"]
+      resources = data.is_a?(Array) ? data : [data].compact
+      resource_types = resources
+        .map { |resource| resource["type"] }
+        .compact
+        .uniq
+      UI.message("App Privacy probe OK #{path.split('?').first}: #{resource_types.join(', ')}")
+    rescue Spaceship::UnexpectedResponse => error
+      UI.message("App Privacy probe failed #{path.split('?').first}: #{error.message.lines.first.strip}")
+    end
   end
-
-  publish_state = Spaceship::ConnectAPI::AppDataUsagesPublishState.get(app_id: app.id)
-  publish_state.publish! unless publish_state.published
-  UI.success("Published App Privacy as no data collected")
+  UI.user_error!("App Privacy API discovery completed")
 end
 
 def changelog_for(version)
