@@ -24,7 +24,9 @@ Service Management and is not part of this file either.
 ## Complete example
 
 ```toml
+mac_id = "00000000-0000-0000-0000-000000000000"
 proximity_auto_lock = false
+# proximity_pause_until is omitted unless auto-lock is temporarily paused
 proximity_device_id = ""
 proximity_device_name = ""
 proximity_mode = "smart"
@@ -43,8 +45,10 @@ configuration.
 
 | Key | Type | Default | Description |
 | --- | --- | ---: | --- |
+| `mac_id` | String | generated once | Stable UUID shared with paired clients. Do not copy another Mac's value. |
 | `remote_host` | String | `""` | Public hostname of a user-operated HTTPS tunnel. Do not include `https://` or a path. Empty means LAN-only. |
 | `proximity_auto_lock` | Boolean | `false` | Enables walk-away locking using the selected iPhone's Bluetooth signal. |
+| `proximity_pause_until` | Number | omitted | Unix timestamp at which a temporary auto-lock pause ends. Prefer setting this from the menu bar or Settings. The key is removed when auto-lock resumes. |
 | `proximity_device_id` | String | `""` | Core Bluetooth UUID of the selected device. Prefer selecting it in Settings. |
 | `proximity_device_name` | String | `""` | Cached display name used by the Settings UI. |
 | `proximity_mode` | String | `"smart"` | Detection mode: `"smart"` learns the nearby signal and adapts its threshold; `"manual"` uses the three controls below. |
@@ -61,6 +65,10 @@ signal** discards it and starts a fresh learning window without changing
 the learned reference within a bounded range in a more conservative direction.
 Momentarily stronger readings cannot tighten the departure threshold, and a
 gradual departure cannot move the reference indefinitely.
+
+Pausing auto-lock keeps `proximity_auto_lock` enabled but stops proximity
+monitoring until `proximity_pause_until`. Amado clears an expired deadline and
+starts monitoring again automatically, including after an app restart.
 
 ## Reload behavior
 

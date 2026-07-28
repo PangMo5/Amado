@@ -15,12 +15,19 @@ Both paths can only lock.
 - The Mac stores that secret in Keychain. The iPhone stores paired-Mac data in
   its App Group container so the app, widget, Control Center control, and Watch
   relay can use it.
+- Each Mac and iPhone installation has a stable UUID. Display names are never
+  used as authentication or revocation identifiers. The Mac uses the iPhone
+  UUID to show paired phones and reject normal requests from an installation
+  removed in Settings. Scanning the QR code is the explicit path that restores
+  a removed installation.
 - Every command and response is authenticated with HMAC-SHA256. Command
   timestamps must be within 30 seconds, and a nonce may be accepted only once,
   limiting replay. A response carries the matching command nonce and its own
   freshness timestamp.
-- Status responses contain only the Mac's current locked or unlocked state.
-  Amado does not expose a session history or retain a remote activity log.
+- Status responses contain the Mac's current locked or unlocked state plus its
+  stable UUID, macOS-supplied name, and Bonjour service name so companion
+  surfaces can keep their paired record current. Amado does not expose a
+  session history or retain a remote activity log.
 - LAN commands use Bonjour discovery and a direct TCP connection.
 - Remote commands use HTTPS through a tunnel operated by the user. The local
   HTTP listener binds only to `127.0.0.1:51521`.
@@ -38,6 +45,15 @@ Anyone with the pairing payload can lock the Mac. They cannot unlock it through
 Amado, but unexpected locks can still disrupt work. Do not publish the QR code,
 pairing string, Keychain contents, or a configuration backup that contains
 client pairing data.
+
+Per-device removal is an application-level control around the stable client
+identifier. Because all phones paired from the same QR payload hold the same
+lock-only secret, regenerate the pairing secret if a device or pairing payload
+may be compromised. Regeneration is the cryptographic way to invalidate every
+copy of that credential.
+
+Device UUIDs are identifiers, not secrets. Possessing a UUID does not authorize
+a command; the pairing secret and valid HMAC are still required.
 
 If a pairing secret may have leaked:
 

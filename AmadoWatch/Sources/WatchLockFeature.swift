@@ -50,7 +50,9 @@ struct WatchLockFeature {
               case .lockRequested:
                 "Lock requested, but confirmation was unavailable"
               case .locked: "Locked \(mac.name) ✓"
+              case .notPaired: "\(mac.name) is no longer paired"
               case .helloAccepted,
+                   .unpaired,
                    .unlocked: "Unexpected Mac response"
               }
             await send(.lockResult(macID: id, message: message))

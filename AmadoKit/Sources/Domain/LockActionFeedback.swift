@@ -105,7 +105,9 @@ public struct LockActionFeedback: Codable, Equatable, Identifiable, Sendable {
       case .locked: .locked
       case .alreadyLocked: .alreadyLocked
       case .lockRequested: .confirmationUnavailable
+      case .notPaired: .noPairedMac
       case .helloAccepted,
+           .unpaired,
            .unlocked: .failed
       }
     return Self(
@@ -130,7 +132,9 @@ public struct LockActionFeedback: Codable, Equatable, Identifiable, Sendable {
       case .locked,
            .alreadyLocked: .locked
       case .unlocked: .unlocked
+      case .notPaired: .noPairedMac
       case .helloAccepted,
+           .unpaired,
            .lockRequested: .statusUnavailable
       }
     return Self(

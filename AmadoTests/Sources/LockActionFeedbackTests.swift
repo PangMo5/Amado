@@ -10,6 +10,8 @@ struct LockActionFeedbackTests {
       (.alreadyLocked, .alreadyLocked),
       (.lockRequested, .confirmationUnavailable),
       (.helloAccepted, .failed),
+      (.notPaired, .noPairedMac),
+      (.unpaired, .failed),
       (.unlocked, .failed),
     ]
   )
@@ -36,6 +38,8 @@ struct LockActionFeedbackTests {
       (.alreadyLocked, .locked),
       (.unlocked, .unlocked),
       (.helloAccepted, .statusUnavailable),
+      (.notPaired, .noPairedMac),
+      (.unpaired, .statusUnavailable),
       (.lockRequested, .statusUnavailable),
     ]
   )

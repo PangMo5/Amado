@@ -2,6 +2,12 @@
 
 Notable changes to the Amado iPhone, Apple Watch, widget, and Control Center clients are documented here. Versions follow semantic versioning, and the newest release appears first.
 
+## Unreleased
+
+- **Stable iPhone identity:** Each installation now has a non-editable short label derived from its stable UUID, avoiding reliance on restricted system device names.
+- **Synced Mac names:** Paired Mac names and stable identities now refresh from authenticated responses without breaking existing Widget, Control Center, or Watch selections.
+- **Two-way pairing removal:** Removing a pairing on either device is reflected on the other the next time they connect.
+
 ## 1.0.0 (2026-07-27)
 
 - **Live Mac status:** See whether each paired Mac is locked or unlocked and pull to refresh its current state.

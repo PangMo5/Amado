@@ -11,8 +11,10 @@ struct AmadoConfig: Equatable, Sendable, Codable {
   // MARK: Lifecycle
 
   init(
+    macID: String = "",
     remoteHost: String = "",
     proximityAutoLock: Bool = false,
+    proximityPauseUntil: Double? = nil,
     proximityDeviceID: String = "",
     proximityDeviceName: String = "",
     proximityMode: ProximityDetectionMode = .smart,
@@ -21,8 +23,10 @@ struct AmadoConfig: Equatable, Sendable, Codable {
     proximityGraceSeconds: Double = 2,
     proximitySmoothing: Int = 3,
   ) {
+    self.macID = macID
     self.remoteHost = remoteHost
     self.proximityAutoLock = proximityAutoLock
+    self.proximityPauseUntil = proximityPauseUntil
     self.proximityDeviceID = proximityDeviceID
     self.proximityDeviceName = proximityDeviceName
     self.proximityMode = proximityMode
@@ -37,12 +41,18 @@ struct AmadoConfig: Equatable, Sendable, Codable {
     // A missing key is the normal partial/empty-config case → default. A key
     // that is present but wrong-typed fails the decode so fileStorage keeps the
     // last good config instead of silently resetting.
+    macID = container.contains(.macID)
+      ? try container.decode(String.self, forKey: .macID)
+      : ""
     remoteHost = container.contains(.remoteHost)
       ? try container.decode(String.self, forKey: .remoteHost)
       : ""
     proximityAutoLock = container.contains(.proximityAutoLock)
       ? try container.decode(Bool.self, forKey: .proximityAutoLock)
       : false
+    proximityPauseUntil = container.contains(.proximityPauseUntil)
+      ? try container.decode(Double.self, forKey: .proximityPauseUntil)
+      : nil
     proximityDeviceID = container.contains(.proximityDeviceID)
       ? try container.decode(String.self, forKey: .proximityDeviceID)
       : ""
@@ -68,12 +78,18 @@ struct AmadoConfig: Equatable, Sendable, Codable {
 
   // MARK: Internal
 
+  /// Stable UUID this Mac shares with paired clients. Generated once on launch.
+  var macID: String
   /// Public host of the tunnel the user runs for remote lock (e.g.
   /// `amado.example.com`); empty means LAN-only.
   var remoteHost: String
   /// Lock this Mac when the selected nearby device (the owner's iPhone) walks
   /// out of Bluetooth range.
   var proximityAutoLock: Bool
+  /// Unix timestamp through which proximity monitoring is suspended. Nil means
+  /// auto-lock is not paused. Keeping the deadline on disk lets a pause survive
+  /// app restarts without turning the underlying auto-lock preference off.
+  var proximityPauseUntil: Double?
   /// CoreBluetooth identifier (UUID string) of the device to sense; empty = none.
   var proximityDeviceID: String
   /// Cached display name of that device, for the Settings UI.
@@ -92,11 +108,19 @@ struct AmadoConfig: Equatable, Sendable, Codable {
   /// Smaller = snappier but noisier; larger = smoother but laggier.
   var proximitySmoothing: Int
 
+  func activeProximityPauseUntil(at now: Date) -> Date? {
+    guard let proximityPauseUntil else { return nil }
+    let deadline = Date(timeIntervalSince1970: proximityPauseUntil)
+    return deadline > now ? deadline : nil
+  }
+
   // MARK: Private
 
   private enum CodingKeys: String, CodingKey {
+    case macID = "mac_id"
     case remoteHost = "remote_host"
     case proximityAutoLock = "proximity_auto_lock"
+    case proximityPauseUntil = "proximity_pause_until"
     case proximityDeviceID = "proximity_device_id"
     case proximityDeviceName = "proximity_device_name"
     case proximityMode = "proximity_mode"

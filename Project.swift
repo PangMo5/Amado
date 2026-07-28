@@ -260,7 +260,9 @@ let project = Project(
       deploymentTargets: .macOS("15.0"),
       sources: ["AmadoTests/Sources/**"],
       dependencies: [
-        .target(name: "AmadoKit")
+        .target(name: "Amado"),
+        .target(name: "AmadoKit"),
+        .external(name: "TOML"),
       ],
     ),
   ],

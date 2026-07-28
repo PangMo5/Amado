@@ -12,12 +12,33 @@ struct AppFeature {
 
   // MARK: Internal
 
+  enum ProximityPausePreset: TimeInterval, CaseIterable, Equatable, Sendable {
+    case fifteenMinutes = 900
+    case thirtyMinutes = 1_800
+    case oneHour = 3_600
+    case twoHours = 7_200
+    case fourHours = 14_400
+
+    var title: String {
+      switch self {
+      case .fifteenMinutes: "15 minutes"
+      case .thirtyMinutes: "30 minutes"
+      case .oneHour: "1 hour"
+      case .twoHours: "2 hours"
+      case .fourHours: "4 hours"
+      }
+    }
+  }
+
   @ObservableState
   struct State: Equatable {
     /// Non-sensitive, human-editable settings in `~/.config/amado/config.toml`
     /// (the tunnel host lives here). The pairing secret does NOT — it's an HMAC
     /// key kept in the Keychain.
     @Shared(.amadoConfig) var config
+    /// Paired iPhones known to this Mac. Separate from config.toml because it
+    /// is app-managed state rather than a hand-edited preference.
+    @Shared(.pairedClientRegistry) var pairedClientRegistry
     /// Loaded from the Keychain on `.task`, held in memory for the QR / reveal
     /// UI. Empty until first launch generates one.
     var pairingSecretBase64 = ""
@@ -45,6 +66,23 @@ struct AppFeature {
       PairingSecret(base64: pairingSecretBase64)
     }
 
+    var proximityPauseUntil: Date? {
+      config.proximityPauseUntil.map(Date.init(timeIntervalSince1970:))
+    }
+
+    var pairedClients: [PairedClient] {
+      pairedClientRegistry.clients
+    }
+
+    var macIdentity: PairedMacIdentity? {
+      guard let id = UUID(uuidString: config.macID) else { return nil }
+      return PairedMacIdentity(
+        id: id,
+        name: currentMacServiceName,
+        serviceName: currentMacServiceName,
+      )
+    }
+
     mutating func record(_ message: String, kind: ActivityEntry.Kind, id: UUID, at: Date) {
       activity.insert(ActivityEntry(id: id, at: at, message: message, kind: kind), at: 0)
       if activity.count > 50 {
@@ -69,11 +107,16 @@ struct AppFeature {
     case checkForUpdatesTapped
     case regenerateSecretTapped
     case pairingWindowClosed
+    case removePairedClient(UUID)
     case launchAtLoginToggled(Bool)
     case remoteHostChanged(String)
     case testRemoteTapped
     case remoteTestFinished(String)
     case proximityAutoLockToggled(Bool)
+    case proximityPausePresetSelected(ProximityPausePreset)
+    case proximityPauseUntilSelected(Date)
+    case proximityPauseResumeTapped
+    case proximityPauseExpired(Date)
     case proximityDeviceSelected(DiscoveredDevice)
     case proximityModeChanged(ProximityDetectionMode)
     case proximitySensitivityChanged(ProximitySensitivity)
@@ -107,6 +150,11 @@ struct AppFeature {
         updater.start()
         // Make sure ~/.config/amado/ exists before the first config write.
         try? ConfigLocation.ensureDirectoryExists()
+        if UUID(uuidString: state.config.macID) == nil {
+          state.$config.withLock {
+            $0.macID = uuid().uuidString
+          }
+        }
         // The pairing secret lives in the Keychain (migrated once from the old
         // UserDefaults location). Mint one on first launch.
         state.pairingSecretBase64 = secretStore.load() ?? ""
@@ -126,6 +174,9 @@ struct AppFeature {
           UserDefaults.standard.removeObject(forKey: "amado.remoteHost")
         }
         state.launchAtLogin = loginItem.isEnabled()
+        if state.config.proximityPauseUntil.map({ $0 <= date.now.timeIntervalSince1970 }) == true {
+          state.$config.withLock { $0.proximityPauseUntil = nil }
+        }
         let cfg = state.config
         state.appliedProximityKey = proximityKey(cfg)
         let sharedConfig = state.$config
@@ -173,6 +224,7 @@ struct AppFeature {
               await send(.proximityDevicesUpdated(devices))
             }
           },
+          proximityPauseTimer(for: cfg),
         )
 
       case .listenerStarted:
@@ -192,6 +244,47 @@ struct AppFeature {
           }
           state.remember(command.nonce)
           let isLocked = screenLocker.isLocked()
+          let macIdentity = state.macIdentity
+
+          if let client = command.client {
+            switch command.action {
+            case .hello:
+              state.$pairedClientRegistry.withLock {
+                $0.register(client, at: date.now, clearsRevocation: true)
+              }
+
+            case .lock,
+                 .status:
+              guard !state.pairedClientRegistry.isRevoked(client.id) else {
+                let response = LockCommandResponse(
+                  commandNonce: command.nonce,
+                  outcome: .notPaired,
+                  respondedAt: date.now,
+                  mac: macIdentity,
+                )
+                let responseData = try LockResponseCodec.encode(response, secret: secret)
+                state.record(
+                  "Rejected \(client.name), pairing was removed",
+                  kind: .rejected,
+                  id: uuid(),
+                  at: date.now,
+                )
+                return .run { _ in request.respond(with: responseData) }
+              }
+              // An authenticated request from an older paired app migrates into
+              // the registry on first contact. A locally revoked ID cannot take
+              // this path and must scan the QR again.
+              state.$pairedClientRegistry.withLock {
+                $0.register(client, at: date.now, clearsRevocation: false)
+              }
+
+            case .unpair:
+              state.$pairedClientRegistry.withLock {
+                $0.remove(client.id, revoke: false)
+              }
+            }
+          }
+
           switch command.action {
           case .lock:
             if isLocked {
@@ -199,6 +292,7 @@ struct AppFeature {
                 commandNonce: command.nonce,
                 outcome: .alreadyLocked,
                 respondedAt: date.now,
+                mac: macIdentity,
               )
               let responseData = try LockResponseCodec.encode(response, secret: secret)
               state.record(
@@ -220,6 +314,7 @@ struct AppFeature {
                 commandNonce: command.nonce,
                 outcome: confirmed ? .locked : .lockRequested,
                 respondedAt: date.now,
+                mac: macIdentity,
               )
               guard let responseData = try? LockResponseCodec.encode(response, secret: secret) else {
                 return
@@ -234,6 +329,7 @@ struct AppFeature {
               to: command,
               isLocked: isLocked,
               now: date.now,
+              mac: macIdentity,
             )
             let responseData = try LockResponseCodec.encode(response, secret: secret)
             state.justPairedWith = command.origin
@@ -245,8 +341,27 @@ struct AppFeature {
               to: command,
               isLocked: isLocked,
               now: date.now,
+              mac: macIdentity,
             )
             let responseData = try LockResponseCodec.encode(response, secret: secret)
+            return .run { _ in request.respond(with: responseData) }
+
+          case .unpair:
+            let response = LockCommandResponse(
+              commandNonce: command.nonce,
+              outcome: .unpaired,
+              respondedAt: date.now,
+              mac: macIdentity,
+            )
+            let responseData = try LockResponseCodec.encode(response, secret: secret)
+            if let client = command.client {
+              state.record(
+                "Unpaired \(client.name)",
+                kind: .rejected,
+                id: uuid(),
+                at: date.now,
+              )
+            }
             return .run { _ in request.respond(with: responseData) }
           }
         } catch let error as LockCodecError {
@@ -281,11 +396,27 @@ struct AppFeature {
         state.pairingSecretBase64 = secret.base64
         secretStore.save(secret.base64)
         state.recentNonces.removeAll()
+        state.$pairedClientRegistry.withLock { $0 = PairedClientRegistry() }
         state.record("Pairing secret regenerated — re-pair your devices", kind: .rejected, id: uuid(), at: date.now)
         return .none
 
       case .pairingWindowClosed:
         state.justPairedWith = nil
+        return .none
+
+      case .removePairedClient(let id):
+        guard let client = state.pairedClients.first(where: { $0.id == id }) else {
+          return .none
+        }
+        state.$pairedClientRegistry.withLock {
+          $0.remove(id, revoke: true)
+        }
+        state.record(
+          "Removed pairing for \(client.name)",
+          kind: .rejected,
+          id: uuid(),
+          at: date.now,
+        )
         return .none
 
       case .launchAtLoginToggled(let enabled):
@@ -320,6 +451,13 @@ struct AppFeature {
         return .none
 
       case .proximityFarDetected(let reason):
+        guard
+          state.config.proximityAutoLock,
+          !state.config.proximityDeviceID.isEmpty,
+          state.config.activeProximityPauseUntil(at: date.now) == nil
+        else {
+          return .none
+        }
         let name = state.config.proximityDeviceName.isEmpty ? "your iPhone" : state.config.proximityDeviceName
         state.record(
           "Locked — \(name) left (\(reason.activityDescription))",
@@ -335,7 +473,42 @@ struct AppFeature {
 
       case .proximityAutoLockToggled(let on):
         // Persist only; the config observer re-issues monitor().
-        state.$config.withLock { $0.proximityAutoLock = on }
+        state.$config.withLock {
+          $0.proximityAutoLock = on
+          if !on {
+            $0.proximityPauseUntil = nil
+          }
+        }
+        return .none
+
+      case .proximityPausePresetSelected(let preset):
+        guard state.config.proximityAutoLock else { return .none }
+        state.$config.withLock {
+          $0.proximityPauseUntil = date.now.addingTimeInterval(preset.rawValue).timeIntervalSince1970
+        }
+        return .none
+
+      case .proximityPauseUntilSelected(let pauseUntil):
+        guard state.config.proximityAutoLock, pauseUntil > date.now else { return .none }
+        state.$config.withLock {
+          $0.proximityPauseUntil = pauseUntil.timeIntervalSince1970
+        }
+        return .none
+
+      case .proximityPauseResumeTapped:
+        state.$config.withLock { $0.proximityPauseUntil = nil }
+        return .none
+
+      case .proximityPauseExpired(let expectedDeadline):
+        guard
+          state.config.proximityPauseUntil == expectedDeadline.timeIntervalSince1970
+        else {
+          return .none
+        }
+        guard expectedDeadline <= date.now else {
+          return proximityPauseTimer(for: state.config)
+        }
+        state.$config.withLock { $0.proximityPauseUntil = nil }
         return .none
 
       case .proximityDeviceSelected(let device):
@@ -373,9 +546,12 @@ struct AppFeature {
         guard key != state.appliedProximityKey else { return .none }
         state.appliedProximityKey = key
         let configuration = proximityMonitorConfiguration(newConfig)
-        return .run { _ in
-          proximityLock.monitor(configuration)
-        }
+        return .merge(
+          .run { _ in
+            proximityLock.monitor(configuration)
+          },
+          proximityPauseTimer(for: newConfig),
+        )
 
       case .proximityScanToggled(let on):
         // discovered() is subscribed once in `.task`; here we only start/stop the
@@ -392,18 +568,25 @@ struct AppFeature {
 
   // MARK: Private
 
+  private enum CancelID {
+    case proximityPauseTimer
+  }
+
   /// The proximity fields that, when changed, require re-issuing monitor().
   private func proximityKey(_ config: AmadoConfig) -> String {
-    """
-    \(config.proximityAutoLock)|\(config.proximityDeviceID)|\(config.proximityMode.rawValue)|\
-    \(config.proximitySensitivity.rawValue)|\(config.proximityFarRSSI)|\
-    \(config.proximityGraceSeconds)|\(config.proximitySmoothing)
-    """
+    let pauseUntil = config.proximityPauseUntil.map { String($0) } ?? ""
+    return """
+      \(config.proximityAutoLock)|\(pauseUntil)|\
+      \(config.proximityDeviceID)|\(config.proximityMode.rawValue)|\
+      \(config.proximitySensitivity.rawValue)|\(config.proximityFarRSSI)|\
+      \(config.proximityGraceSeconds)|\(config.proximitySmoothing)
+      """
   }
 
   private func proximityMonitorConfiguration(_ config: AmadoConfig) -> ProximityMonitorConfiguration {
-    ProximityMonitorConfiguration(
-      deviceID: config.proximityAutoLock ? UUID(uuidString: config.proximityDeviceID) : nil,
+    let isPaused = config.activeProximityPauseUntil(at: date.now) != nil
+    return ProximityMonitorConfiguration(
+      deviceID: config.proximityAutoLock && !isPaused ? UUID(uuidString: config.proximityDeviceID) : nil,
       mode: config.proximityMode,
       sensitivity: config.proximitySensitivity,
       manualFarRSSI: config.proximityFarRSSI,
@@ -412,6 +595,22 @@ struct AppFeature {
     )
   }
 
+  private func proximityPauseTimer(for config: AmadoConfig) -> Effect<Action> {
+    guard let deadline = config.activeProximityPauseUntil(at: date.now) else {
+      return .cancel(id: CancelID.proximityPauseTimer)
+    }
+    let delay = deadline.timeIntervalSince(date.now)
+    return .run { send in
+      try await clock.sleep(for: .seconds(delay))
+      await send(.proximityPauseExpired(deadline))
+    }
+    .cancellable(id: CancelID.proximityPauseTimer, cancelInFlight: true)
+  }
+
+}
+
+private var currentMacServiceName: String {
+  Host.current().localizedName ?? "Mac"
 }
 
 extension ProximityDecisionEngine.LockReason {

@@ -1,3 +1,4 @@
+import AmadoKit
 import Foundation
 import Sharing
 import TOML
@@ -21,6 +22,26 @@ extension SharedReaderKey where Self == FileStorageKey<AmadoConfig>.Default {
         },
       ),
       default: AmadoConfig(),
+    ]
+  }
+}
+
+extension SharedReaderKey where Self == FileStorageKey<PairedClientRegistry>.Default {
+  /// The Mac-side list of paired phones and locally revoked client identifiers.
+  static var pairedClientRegistry: Self {
+    Self[
+      .fileStorage(
+        ConfigLocation.pairedClientsFileURL,
+        decode: { data in
+          try JSONDecoder().decode(PairedClientRegistry.self, from: data)
+        },
+        encode: { registry in
+          let encoder = JSONEncoder()
+          encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+          return try encoder.encode(registry)
+        },
+      ),
+      default: PairedClientRegistry(),
     ]
   }
 }

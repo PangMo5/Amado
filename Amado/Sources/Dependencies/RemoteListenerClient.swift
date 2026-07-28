@@ -66,7 +66,12 @@ private actor RemoteListener {
     let router = Router()
     // All command paths take the same signed envelope and return a separately
     // signed response envelope.
-    for path in [AmadoService.lockPath, AmadoService.helloPath, AmadoService.statusPath] {
+    for path in [
+      AmadoService.lockPath,
+      AmadoService.helloPath,
+      AmadoService.statusPath,
+      AmadoService.unpairPath,
+    ] {
       router.post(RouterPath(stringLiteral: path)) { request, _ -> Response in
         var request = request
         let buffer = try await request.collectBody(upTo: Self.maxBody)

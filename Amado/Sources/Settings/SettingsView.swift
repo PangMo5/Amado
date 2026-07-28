@@ -80,15 +80,22 @@ struct SettingsView: View {
   @State private var secretRevealed = false
 
   private var payloadString: String {
-    PairingPayload(
-      name: hostName,
+    let identity = store.macIdentity
+    return PairingPayload(
+      name: identity?.name ?? "Mac",
       secret: store.pairingSecretBase64,
       remoteHost: store.config.remoteHost.isEmpty ? nil : store.config.remoteHost,
+      deviceID: identity?.id,
+      serviceName: identity?.serviceName,
     ).encoded()
   }
 
   private var generalPane: some View {
     Group {
+      MacIdentitySection(
+        name: store.macIdentity?.name ?? "Mac",
+        deviceID: store.config.macID,
+      )
       Section {
         Toggle(
           "Launch at Login",
@@ -152,6 +159,34 @@ struct SettingsView: View {
 
   @ViewBuilder
   private var pairingPane: some View {
+    if !store.pairedClients.isEmpty {
+      Section {
+        ForEach(store.pairedClients) { client in
+          HStack {
+            Image(systemSymbol: .iphone)
+              .foregroundStyle(.tint)
+            VStack(alignment: .leading, spacing: 2) {
+              Text(client.name)
+              Text("Last seen \(client.lastSeenAt.formatted(date: .abbreviated, time: .shortened))")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button("Remove", role: .destructive) {
+              store.send(.removePairedClient(client.id))
+            }
+          }
+        }
+      } header: {
+        Text("Paired devices")
+      } footer: {
+        Text(
+          "Removing a device also removes this Mac from that iPhone the next time it connects. "
+            + "Scan the pairing code again to restore access."
+        )
+      }
+    }
+
     if let device = store.justPairedWith {
       Section {
         Label("Paired with \(device)", systemSymbol: .checkmarkSealFill)
@@ -203,6 +238,28 @@ struct SettingsView: View {
     NSPasteboard.general.setString(string, forType: .string)
   }
 
+}
+
+// MARK: - MacIdentitySection
+
+private struct MacIdentitySection: View {
+  let name: String
+  let deviceID: String
+
+  var body: some View {
+    Section {
+      LabeledContent("Name", value: name)
+      LabeledContent("Device ID") {
+        Text(deviceID)
+          .font(.caption.monospaced())
+          .textSelection(.enabled)
+      }
+    } header: {
+      Text("This Mac")
+    } footer: {
+      Text("The Mac name is supplied by macOS. The device ID keeps the pairing stable.")
+    }
+  }
 }
 
 // MARK: - AboutSection
@@ -318,6 +375,10 @@ private struct ProximitySettingsPane: View {
         )
       }
 
+      if store.config.proximityAutoLock, !store.config.proximityDeviceID.isEmpty {
+        ProximityPauseSection(store: store)
+      }
+
       Section {
         ForEach(store.proximityDevices) { device in
           Button {
@@ -379,7 +440,11 @@ private struct ProximitySettingsPane: View {
           Button("Recalibrate nearby signal") {
             store.send(.proximityRecalibrateTapped)
           }
-          .disabled(!store.config.proximityAutoLock || store.config.proximityDeviceID.isEmpty)
+          .disabled(
+            !store.config.proximityAutoLock
+              || store.config.proximityDeviceID.isEmpty
+              || store.proximityPauseUntil != nil
+          )
         } else {
           manualControls
         }
@@ -456,6 +521,9 @@ private struct ProximitySettingsPane: View {
     if store.config.proximityAutoLock, store.config.proximityDeviceID.isEmpty {
       return "Pick your iPhone below"
     }
+    if let deadline = store.proximityPauseUntil {
+      return "Paused until \(deadline.formatted(date: .abbreviated, time: .shortened))"
+    }
     return statusText(store.proximityStatus)
   }
 
@@ -489,6 +557,63 @@ private struct ProximitySettingsPane: View {
 
 }
 
+// MARK: - ProximityPauseSection
+
+private struct ProximityPauseSection: View {
+
+  // MARK: Internal
+
+  let store: StoreOf<AppFeature>
+
+  var body: some View {
+    Section {
+      if let deadline = store.proximityPauseUntil {
+        LabeledContent(
+          "Paused until",
+          value: deadline.formatted(date: .abbreviated, time: .shortened),
+        )
+        Button("Resume Auto-lock") {
+          store.send(.proximityPauseResumeTapped)
+        }
+      } else {
+        Menu("Pause for") {
+          ForEach(AppFeature.ProximityPausePreset.allCases, id: \.self) { preset in
+            Button(preset.title) {
+              store.send(.proximityPausePresetSelected(preset))
+            }
+          }
+        }
+      }
+
+      DatePicker(
+        "Resume at",
+        selection: $customPauseUntil,
+        in: Date()...,
+        displayedComponents: [.date, .hourAndMinute],
+      )
+      Button(store.proximityPauseUntil == nil ? "Pause until selected time" : "Change pause end time") {
+        store.send(.proximityPauseUntilSelected(customPauseUntil))
+      }
+    } header: {
+      Text("Temporary pause")
+    } footer: {
+      Text("Auto-lock resumes automatically at the selected time, even after Amado restarts.")
+    }
+    .onAppear {
+      if let deadline = store.proximityPauseUntil {
+        customPauseUntil = deadline
+      } else {
+        customPauseUntil = Date().addingTimeInterval(AppFeature.ProximityPausePreset.oneHour.rawValue)
+      }
+    }
+  }
+
+  // MARK: Private
+
+  @State private var customPauseUntil = Date()
+
+}
+
 extension ProximityDetectionMode {
   fileprivate var title: String {
     switch self {
@@ -506,8 +631,4 @@ extension ProximitySensitivity {
     case .fast: "Fast"
     }
   }
-}
-
-private var hostName: String {
-  Host.current().localizedName ?? "Mac"
 }

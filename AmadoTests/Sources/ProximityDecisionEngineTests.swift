@@ -10,9 +10,9 @@ struct ProximityDecisionEngineTests {
 
   @Test(
     arguments: [
-      (ProximitySensitivity.fast, -56),
-      (.balanced, -59),
-      (.conservative, -63),
+      (ProximitySensitivity.fast, -60),
+      (.balanced, -63),
+      (.conservative, -67),
     ]
   )
   func `Smart sensitivity derives the expected adaptive threshold`(
@@ -61,7 +61,7 @@ struct ProximityDecisionEngineTests {
     var result = makeArmedSmartEngine(nearbyRSSI: -52)
 
     #expect(result.engine.currentSnapshot.learnedNearRSSI == -52)
-    #expect(result.engine.currentSnapshot.farThresholdRSSI == -66)
+    #expect(result.engine.currentSnapshot.farThresholdRSSI == -70)
 
     for _ in 0 ..< 90 {
       #expect(result.engine.ingest(rssi: -38, at: result.time).lockReason == nil)
@@ -69,7 +69,7 @@ struct ProximityDecisionEngineTests {
     }
 
     #expect(result.engine.currentSnapshot.learnedNearRSSI == -52)
-    #expect(result.engine.currentSnapshot.farThresholdRSSI == -66)
+    #expect(result.engine.currentSnapshot.farThresholdRSSI == -70)
 
     let nearbyFade = [-48, -52, -55, -57, -53, -55, -53, -55, -52, -50, -45, -42]
     for rssi in nearbyFade {
@@ -87,7 +87,7 @@ struct ProximityDecisionEngineTests {
     var result = makeArmedSmartEngine(nearbyRSSI: -38)
 
     #expect(result.engine.currentSnapshot.learnedNearRSSI == -45)
-    #expect(result.engine.currentSnapshot.farThresholdRSSI == -59)
+    #expect(result.engine.currentSnapshot.farThresholdRSSI == -63)
 
     for _ in 0 ..< 90 {
       #expect(result.engine.ingest(rssi: -53, at: result.time).lockReason == nil)
@@ -96,7 +96,34 @@ struct ProximityDecisionEngineTests {
 
     #expect(result.engine.currentSnapshot.phase == .near)
     #expect(result.engine.currentSnapshot.learnedNearRSSI == -49)
-    #expect(result.engine.currentSnapshot.farThresholdRSSI == -63)
+    #expect(result.engine.currentSnapshot.farThresholdRSSI == -67)
+  }
+
+  @Test
+  func `Fast mode ignores a short close-range fade`() {
+    var result = makeArmedSmartEngine(
+      sensitivity: .fast,
+      nearbyRSSI: -47,
+    )
+
+    for _ in 0 ..< 60 {
+      #expect(result.engine.ingest(rssi: -51, at: result.time).lockReason == nil)
+      result.time += 1
+    }
+
+    #expect(result.engine.currentSnapshot.learnedNearRSSI == -51)
+    #expect(result.engine.currentSnapshot.farThresholdRSSI == -66)
+
+    var lockReason: ProximityDecisionEngine.LockReason?
+    let closeRangeFade = [-52, -55, -60, -64, -68, -68, -66, -64, -60, -56, -53, -51]
+    for rssi in closeRangeFade {
+      let evaluation = result.engine.ingest(rssi: rssi, at: result.time)
+      lockReason = lockReason ?? evaluation.lockReason
+      result.time += 1
+    }
+
+    #expect(lockReason == nil)
+    #expect(result.engine.currentSnapshot.phase == .near)
   }
 
   @Test
@@ -114,7 +141,7 @@ struct ProximityDecisionEngineTests {
 
     #expect(lockReason != nil)
     #expect(result.engine.currentSnapshot.learnedNearRSSI == -56)
-    #expect(result.engine.currentSnapshot.farThresholdRSSI == -70)
+    #expect(result.engine.currentSnapshot.farThresholdRSSI == -74)
   }
 
   @Test
@@ -144,7 +171,8 @@ struct ProximityDecisionEngineTests {
     var result = makeArmedSmartEngine()
     var lockReason: ProximityDecisionEngine.LockReason?
 
-    for rssi in [-50, -55, -60, -63, -64, -64, -64, -64, -64, -64, -64, -64] {
+    let borderlineDeparture = [-50, -55, -60, -65] + Array(repeating: -68, count: 16)
+    for rssi in borderlineDeparture {
       let evaluation = result.engine.ingest(rssi: rssi, at: result.time)
       lockReason = lockReason ?? evaluation.lockReason
       result.time += 1
@@ -183,10 +211,11 @@ struct ProximityDecisionEngineTests {
   func `Signal loss after weakening confirms the departure`() {
     var result = makeArmedSmartEngine()
 
-    for rssi in [-50, -55, -60, -65, -70, -75] {
+    for rssi in [-50, -54, -58, -62, -65, -68, -70, -70, -70] {
       _ = result.engine.ingest(rssi: rssi, at: result.time)
       result.time += 1
     }
+    #expect(result.engine.currentSnapshot.phase == .suspectedAway)
     let loss = result.engine.signalLost(at: result.time + 30)
 
     #expect(loss.lockReason == .signalLostAfterWeakening)

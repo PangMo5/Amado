@@ -20,6 +20,7 @@ public enum AmadoService {
   public static let lockPath = "lock"
   public static let helloPath = "hello"
   public static let statusPath = "status"
+  public static let unpairPath = "unpair"
   /// Unauthenticated connectivity probe: returns 200 so a user can confirm their
   /// tunnel actually reaches the running agent. Never locks.
   public static let healthPath = "health"

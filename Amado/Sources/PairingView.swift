@@ -40,10 +40,13 @@ struct PairingView: View {
   @Environment(\.dismissWindow) private var dismissWindow
 
   private var payloadString: String {
-    PairingPayload(
-      name: hostName,
+    let identity = store.macIdentity
+    return PairingPayload(
+      name: identity?.name ?? "Mac",
       secret: store.pairingSecretBase64,
       remoteHost: store.config.remoteHost.isEmpty ? nil : store.config.remoteHost,
+      deviceID: identity?.id,
+      serviceName: identity?.serviceName,
     ).encoded()
   }
 
@@ -112,8 +115,4 @@ struct PairingView: View {
     NSPasteboard.general.setString(string, forType: .string)
   }
 
-}
-
-private var hostName: String {
-  Host.current().localizedName ?? "Mac"
 }

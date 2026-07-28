@@ -2,6 +2,12 @@
 
 Notable changes to the Amado macOS app are documented here. Versions follow semantic versioning, and the newest release appears first.
 
+## Unreleased
+
+- **Stable device identities:** The Mac now shares a stable UUID separately from the name supplied by macOS, keeping pairings linked without coupling identity to Bonjour discovery.
+- **Paired iPhone management:** See paired iPhones by their stable UUID-derived labels and remove individual installations from Mac Settings.
+- **Scheduled auto-lock pause:** Pause proximity auto-lock for a preset duration or until an exact time without disabling the feature.
+
 ## 1.0.2 (2026-07-27)
 
 - **Fixed nearby false locks:** Smart detection no longer lets momentarily stronger Bluetooth readings tighten the learned nearby reference. Confirmed nearby samples now maintain a bounded, conservative rolling baseline that can only make the departure threshold safer without learning a gradual departure as nearby.

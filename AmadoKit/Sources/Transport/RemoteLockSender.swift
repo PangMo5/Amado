@@ -18,6 +18,7 @@ public enum RemoteLockSender {
       case .lock: AmadoService.lockPath
       case .hello: AmadoService.helloPath
       case .status: AmadoService.statusPath
+      case .unpair: AmadoService.unpairPath
       }
     var request = URLRequest(url: baseURL.appendingPathComponent(path))
     request.httpMethod = "POST"

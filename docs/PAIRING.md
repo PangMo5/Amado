@@ -13,11 +13,35 @@ unlock the Mac.
 3. Scan the QR code in the iPhone app.
 4. Hide the code when finished.
 
-The QR code includes the Mac name, pairing secret, and current `remote_host`.
-Anyone who obtains the pairing payload can send valid lock commands, so treat
-it like a password.
+After the first iPhone is registered, the menu-bar shortcut is hidden to keep
+the common menu compact. Pair another phone from **Settings › Pairing › Reveal
+pairing code**.
+
+The QR code includes the Mac's stable device UUID, the Mac name supplied by
+macOS, Bonjour service name, pairing secret, and current `remote_host`. The UUID
+identifies the Mac independently of its display name. Anyone who obtains the
+pairing payload can send valid lock commands, so treat it like a password.
 
 If you change `remote_host`, pair again so the iPhone receives the new hostname.
+
+## Manage paired devices
+
+The Mac lists registered iPhones in **Settings › Pairing**, including when each
+one last contacted the Mac. The iPhone continues to list its paired Macs. Both
+apps show their stable device UUID. The Mac uses the name supplied by macOS.
+Each iPhone installation receives a non-editable label such as `iPhone A1B2C3`,
+derived from the first six characters of its UUID.
+
+- Removing a Mac in the iPhone app sends an authenticated unpair request. If
+  the Mac is offline, the app keeps a local tombstone and retries on a later
+  launch.
+- Removing an iPhone on the Mac blocks that installation's normal background
+  requests. The iPhone removes the Mac from its app, Widget, Control Center,
+  and Watch data the next time one of those surfaces contacts the Mac.
+- Scanning the QR code again explicitly restores a pairing removed on the Mac.
+
+The Mac has no push connection to an inactive iPhone, so Mac-initiated removal
+is reflected on the iPhone at the next status check or lock attempt.
 
 ## Replace the pairing secret
 

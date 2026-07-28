@@ -51,7 +51,14 @@ struct LockMacIntent: AppIntent {
     let feedback: LockActionFeedback
     do {
       let origin = surface == .control ? "Control Center" : "Widget"
-      let response = try await AmadoLockDispatcher.dispatch(.lock(origin: origin), to: target)
+      let response = try await AmadoLockDispatcher.dispatch(
+        .lock(origin: origin, client: clientIdentity),
+        to: target,
+      )
+      PairedMacsStore.updateIdentity(response.mac, for: target.id)
+      if response.outcome == .notPaired {
+        PairedMacsStore.remove(id: target.id)
+      }
       feedback = .responding(to: response.outcome, surface: surface, mac: target)
     } catch {
       feedback = LockActionFeedback(
@@ -119,7 +126,14 @@ struct RefreshMacStatusIntent: AppIntent {
 
     let feedback: LockActionFeedback
     do {
-      let response = try await AmadoLockDispatcher.dispatch(.status(origin: "Widget"), to: target)
+      let response = try await AmadoLockDispatcher.dispatch(
+        .status(origin: "Widget", client: clientIdentity),
+        to: target,
+      )
+      PairedMacsStore.updateIdentity(response.mac, for: target.id)
+      if response.outcome == .notPaired {
+        PairedMacsStore.remove(id: target.id)
+      }
       feedback = .reflectingStatus(response.outcome, surface: .widget, mac: target)
     } catch {
       feedback = LockActionFeedback(
@@ -141,6 +155,8 @@ struct RefreshMacStatusIntent: AppIntent {
   }
 
 }
+
+private let clientIdentity = PairedClientIdentityStore.loadOrCreate()
 
 // MARK: - SelectMacIntent
 

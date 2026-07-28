@@ -27,4 +27,9 @@ public enum ControlCenterMacStore {
     return (try? JSONDecoder().decode(ControlCenterMacSelection.self, from: data))
       ?? ControlCenterMacSelection()
   }
+
+  public static func save(_ selection: ControlCenterMacSelection) {
+    guard let data = try? JSONEncoder().encode(selection) else { return }
+    try? data.write(to: fileURL, options: .atomic)
+  }
 }

@@ -26,7 +26,7 @@ public enum AmadoLockDispatcher {
       do {
         return try await LANLockSender().send(
           command,
-          toMacNamed: mac.name.isEmpty ? nil : mac.name,
+          toMacNamed: mac.bonjourServiceName,
           secret: secret,
         )
       } catch {

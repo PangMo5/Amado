@@ -278,9 +278,7 @@ public struct ProximityDecisionEngine: Sendable {
   private static let extendedSignalLossSeconds: TimeInterval = 90
   private static let manualHysteresisGap = 6.0
   private static let fastMedianWindow = 3
-  private static let highDepartureConfidence = 0.85
   private static let meaningfulDepartureConfidence = 0.5
-  private static let minimumAdaptiveConfirmationSeconds: TimeInterval = 0.75
   private static let nearbyReferenceWindow = 21
   private static let maximumNearbyReferenceDrift = 4.0
   /// A momentarily excellent RSSI must not tighten the departure threshold.
@@ -343,16 +341,6 @@ public struct ProximityDecisionEngine: Sendable {
 
   private static func clamp(_ value: Double) -> Double {
     min(1, max(0, value))
-  }
-
-  private static func adaptiveConfirmationSeconds(
-    base: TimeInterval,
-    confidence: Double,
-  ) -> TimeInterval {
-    max(
-      minimumAdaptiveConfirmationSeconds,
-      base * (1 - (0.75 * clamp(confidence))),
-    )
   }
 
   private mutating func filter(_ rssi: Int) -> Double {
@@ -506,13 +494,10 @@ public struct ProximityDecisionEngine: Sendable {
         phase = .suspectedAway
         suspectedSince = timestamp
       }
-      let confirmation = Self.adaptiveConfirmationSeconds(
-        base: parameters.confirmationSeconds,
-        confidence: evidence.confidence,
-      )
+      let confirmation = parameters.confirmationSeconds
       pendingConfirmationSeconds = confirmation
       if
-        evidence.confidence >= Self.highDepartureConfidence
+        evidence.isDecisive
         || timestamp - (suspectedSince ?? timestamp) >= confirmation
       {
         return latch(
@@ -691,7 +676,7 @@ extension ProximitySensitivity {
     switch self {
     case .conservative:
       Parameters(
-        farMargin: 18,
+        farMargin: 22,
         confirmationSeconds: 8,
         rearmSeconds: 5,
         departureSlope: -0.8,
@@ -701,7 +686,7 @@ extension ProximitySensitivity {
 
     case .balanced:
       Parameters(
-        farMargin: 14,
+        farMargin: 18,
         confirmationSeconds: 5,
         rearmSeconds: 4,
         departureSlope: -0.6,
@@ -711,7 +696,7 @@ extension ProximitySensitivity {
 
     case .fast:
       Parameters(
-        farMargin: 11,
+        farMargin: 15,
         confirmationSeconds: 3,
         rearmSeconds: 3,
         departureSlope: -0.4,

@@ -1,6 +1,6 @@
 # Privacy
 
-Last updated: July 27, 2026
+Last updated: July 28, 2026
 
 Amado does not collect personal data, use analytics or advertising SDKs, track
 you across apps or websites, or operate a hosted relay service.
@@ -9,7 +9,12 @@ you across apps or websites, or operate a hosted relay service.
 
 - **Pairing data:** The Mac stores the pairing secret in Keychain. The iPhone
   stores paired Mac details in its App Group container so the app, widget,
-  Control Center control, and Apple Watch app can use the same Macs.
+  Control Center control, and Apple Watch app can use the same Macs. The Mac
+  separately stores each paired iPhone's installation UUID, derived display
+  label, pairing time, and last-contact time in its local configuration
+  directory. The Mac stores its stable UUID locally and supplies its macOS
+  device name to paired clients. These values are exchanged only through
+  authenticated pairing and command traffic.
 - **Recent Widget and Control feedback:** The iPhone App Group stores only the
   latest Widget status or lock result, or Control Center lock result, so that
   system surface can redraw. It is not an activity history and is ignored after
@@ -18,9 +23,11 @@ you across apps or websites, or operate a hosted relay service.
   `config.toml`.
 - **Developer access:** PangMo5 does not receive this data.
 
-Removing a paired Mac from the iPhone app deletes its locally stored pairing
-data. Regenerating the pairing secret on the Mac invalidates the previous
-secret.
+Removing a paired Mac from the iPhone app deletes its active local pairing data
+and may retain a local pending-unpair record until the Mac acknowledges it.
+Removing an iPhone on the Mac retains that installation identifier in a local
+revocation list. Regenerating the pairing secret on the Mac invalidates the
+previous secret and clears its paired-device registry.
 
 ## Network communication
 

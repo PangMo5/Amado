@@ -1,31 +1,61 @@
 import Foundation
 
+// MARK: - PairedMacIdentity
+
+/// Stable identity a Mac shares with its paired clients. The macOS-supplied
+/// name may change, while the UUID continues to identify the same Mac.
+public struct PairedMacIdentity: Codable, Equatable, Sendable, Identifiable {
+  public init(id: UUID, name: String, serviceName: String) {
+    self.id = id
+    self.name = name
+    self.serviceName = serviceName
+  }
+
+  public let id: UUID
+  public let name: String
+  /// Bonjour service name used only to locate this Mac on the LAN.
+  public let serviceName: String
+}
+
 // MARK: - PairedMac
 
-/// A Mac the phone has paired with. Carries the Mac's name (shown in the picker
-/// and used to match its Bonjour service when locking over the LAN), that Mac's
-/// pairing secret, and — if the Mac has remote access set up — the public host
-/// of its tunnel, so the phone can reach it off-network. The Mac side stays
-/// single-secret; only the client fans out across Macs.
+/// A Mac the phone has paired with. `id` is the phone-local record identity used
+/// by widgets and selections; `deviceID` is the stable UUID shared by the Mac.
+/// Keeping them separate lets existing widget configuration survive migrations
+/// while names and pairing secrets change independently.
 public struct PairedMac: Codable, Equatable, Sendable, Identifiable {
 
   // MARK: Lifecycle
 
-  public init(id: UUID = UUID(), name: String, secretBase64: String, remoteHost: String? = nil) {
+  public init(
+    id: UUID = UUID(),
+    name: String,
+    secretBase64: String,
+    remoteHost: String? = nil,
+    deviceID: UUID? = nil,
+    serviceName: String? = nil,
+  ) {
     self.id = id
     self.name = name
     self.secretBase64 = secretBase64
     self.remoteHost = remoteHost
+    self.deviceID = deviceID
+    self.serviceName = serviceName
   }
 
   // MARK: Public
 
   public let id: UUID
   public var name: String
-  public let secretBase64: String
+  public var secretBase64: String
   /// Public host of the Mac's tunnel (e.g. `amado.example.com`), or `nil` when
   /// the Mac only accepts LAN locks. Mutable so re-pairing can update it.
   public var remoteHost: String?
+  /// Stable UUID supplied by the Mac. Nil only for pairings created by older
+  /// versions that have not been refreshed yet.
+  public var deviceID: UUID?
+  /// Bonjour service name is deliberately separate from the displayed name.
+  public var serviceName: String?
 
   public var secret: PairingSecret? {
     PairingSecret(base64: secretBase64)
@@ -35,6 +65,15 @@ public struct PairedMac: Codable, Equatable, Sendable, Identifiable {
     name.isEmpty ? "Mac" : name
   }
 
+  public var bonjourServiceName: String? {
+    let serviceName = serviceName?.trimmingCharacters(in: .whitespacesAndNewlines)
+    if let serviceName, !serviceName.isEmpty {
+      return serviceName
+    }
+    let legacyName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+    return legacyName.isEmpty ? nil : legacyName
+  }
+
   /// HTTPS base URL of the Mac's tunnel, when set. The tunnel terminates TLS and
   /// forwards to the agent's local HTTP server.
   public var remoteURL: URL? {
@@ -42,23 +81,36 @@ public struct PairedMac: Codable, Equatable, Sendable, Identifiable {
     return URL(string: "https://\(remoteHost)")
   }
 
+  public mutating func apply(_ identity: PairedMacIdentity) {
+    deviceID = identity.id
+    name = identity.name
+    serviceName = identity.serviceName
+  }
+
 }
 
 // MARK: - PairingPayload
 
-/// What a pairing QR / pasted string carries: the Mac's name, secret, and (when
-/// remote access is enabled) its tunnel host. The client finds the Mac on the
-/// LAN by Bonjour (matching the name) and signs commands with the secret; off
-/// the LAN it POSTs to the tunnel host. Encoded as compact JSON; a bare base64
-/// secret is also accepted (name/host blank).
+/// What a pairing QR / pasted string carries: the Mac's stable UUID,
+/// macOS-supplied name, Bonjour service name, secret, and optional tunnel host.
+/// New fields are optional so pairing codes from older releases remain
+/// decodable.
 public struct PairingPayload: Codable, Equatable, Sendable {
 
   // MARK: Lifecycle
 
-  public init(name: String, secret: String, remoteHost: String? = nil) {
+  public init(
+    name: String,
+    secret: String,
+    remoteHost: String? = nil,
+    deviceID: UUID? = nil,
+    serviceName: String? = nil,
+  ) {
     self.name = name
     self.secret = secret
     self.remoteHost = remoteHost
+    self.deviceID = deviceID
+    self.serviceName = serviceName
   }
 
   // MARK: Public
@@ -66,9 +118,17 @@ public struct PairingPayload: Codable, Equatable, Sendable {
   public let name: String
   public let secret: String
   public let remoteHost: String?
+  public let deviceID: UUID?
+  public let serviceName: String?
 
   public var pairedMac: PairedMac {
-    PairedMac(name: name, secretBase64: secret, remoteHost: remoteHost)
+    PairedMac(
+      name: name,
+      secretBase64: secret,
+      remoteHost: remoteHost,
+      deviceID: deviceID,
+      serviceName: serviceName,
+    )
   }
 
   /// Parse a scanned / pasted pairing code: the JSON form, or a bare base64

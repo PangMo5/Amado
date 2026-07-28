@@ -17,9 +17,28 @@ struct MenuBarContentView: View {
       store.send(.lockNowTapped)
     }
 
+    if store.config.proximityAutoLock, !store.config.proximityDeviceID.isEmpty {
+      Menu("Pause Auto-lock") {
+        if let deadline = store.proximityPauseUntil {
+          Text("Paused until \(deadline.formatted(date: .abbreviated, time: .shortened))")
+          Button("Resume Auto-lock") {
+            store.send(.proximityPauseResumeTapped)
+          }
+        } else {
+          ForEach(AppFeature.ProximityPausePreset.allCases, id: \.self) { preset in
+            Button(preset.title) {
+              store.send(.proximityPausePresetSelected(preset))
+            }
+          }
+        }
+      }
+    }
+
     Divider()
 
-    OpenWindowButton(id: "pairing", title: "Show pairing code…")
+    if store.pairedClients.isEmpty {
+      OpenWindowButton(id: "pairing", title: "Show pairing code…")
+    }
     OpenWindowButton(id: "settings", title: "Settings…", shortcut: ",")
     Button("Check for Updates…") {
       store.send(.checkForUpdatesTapped)

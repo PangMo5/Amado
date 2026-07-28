@@ -28,12 +28,17 @@ automatically.
   mode keeps direct RSSI, delay, and smoothing controls. Smart keeps a
   conservative rolling nearby reference so a momentarily stronger reading
   cannot make ordinary desk-range fading look like departure.
+- **Pause when you need it:** Suspend proximity auto-lock for 15 minutes to
+  four hours, or choose an exact resume time. The pause survives a relaunch and
+  ends automatically without turning auto-lock off.
 - **Fast on your LAN:** Bonjour discovery and a direct authenticated command,
   with no account or hosted service.
 - **Remote when you choose:** Bring your own HTTPS tunnel. Amado never proxies
   commands through a service operated by this project.
 - **Authenticated pairing:** QR pairing provisions a 256-bit secret used for
   HMAC-SHA256 authentication, timestamp checks, and replay protection.
+- **Stable device identity:** Macs use the name supplied by macOS, while each
+  iPhone installation gets a short stable label derived from its UUID.
 
 ## How it works
 
@@ -50,7 +55,10 @@ loopback-only HTTP listener on `127.0.0.1:51521`. Use a control when you want an
 immediate lock. The same authenticated connection returns the Mac's observed
 lock state, and the iPhone app can refresh that state on demand. Enable
 proximity auto-lock when you want walking away to be enough; it runs on the Mac
-and does not require the iPhone app to stay open.
+and does not require the iPhone app to stay open. The Mac also keeps a local
+list of paired iPhones. Removing a pairing from either side is synchronized the
+next time the devices connect. Stable UUIDs identify each installation
+independently of its displayed name.
 
 See [Security](docs/SECURITY.md) for the trust model and protocol boundaries.
 
@@ -81,8 +89,10 @@ reloaded when the file changes. Pairing secrets stay in Keychain.
 
 | Setting | Default | Purpose |
 | --- | ---: | --- |
+| `mac_id` | generated once | Stable Mac identity shared with paired clients |
 | `remote_host` | `""` | Public hostname of your HTTPS tunnel. Empty is LAN-only. |
 | `proximity_auto_lock` | `false` | Lock when the selected iPhone leaves |
+| `proximity_pause_until` | omitted | Unix timestamp when a temporary pause ends |
 | `proximity_mode` | `"smart"` | Adaptive detection, or `"manual"` for direct RSSI controls |
 | `proximity_sensitivity` | `"balanced"` | Smart-mode reaction preset |
 | `proximity_far_rssi` | `-56` | Manual-mode far threshold in dBm |

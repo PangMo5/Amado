@@ -26,7 +26,7 @@ on one fixed RSSI threshold. It combines:
 
 - a fast three-sample median and a stable exponentially weighted filter;
 - a conservative rolling nearby baseline and an adaptive far threshold;
-- weak-signal consistency, signal direction, and adaptive confirmation;
+- weak-signal consistency, signal direction, and preset confirmation timing;
 - separate handling for a weakening signal and a sudden Bluetooth signal loss;
 - hysteresis and a stable-return period before another lock can occur.
 
@@ -36,15 +36,15 @@ within a bounded range in the more conservative direction. The bound prevents a
 slow departure from being learned indefinitely. A recalibration is required to
 intentionally adopt a stronger normal placement.
 
-When the fast and stable filters, weak-signal consistency, and departure trend
-agree, Smart mode locks without waiting for the full confirmation period. Fast
-readings can raise confidence, but the stable filter must also reach the learned
-departure threshold before normal confirmation begins. Ambiguous borderline
-evidence waits longer. Keyboard, pointer, and trackpad activity is never treated
-as proof that the owner is present, so another person using the Mac cannot delay
-auto-lock or teach a departing signal as the new nearby baseline. If a
-previously healthy signal disappears abruptly, Smart mode waits longer before
-treating the loss as departure, but input activity cannot extend that cap.
+When the fast and stable filters agree that the signal is decisively weak,
+Smart mode locks without waiting for the full confirmation period. Fast
+readings can raise confidence, but ordinary fades must also cross the stable
+departure threshold and remain there for the selected preset's confirmation
+time. Keyboard, pointer, and trackpad activity is never treated as proof that
+the owner is present, so another person using the Mac cannot delay auto-lock or
+teach a departing signal as the new nearby baseline. If a previously healthy
+signal disappears abruptly, Smart mode waits longer before treating the loss as
+departure, but input activity cannot extend that cap.
 
 Choose a sensitivity preset based on the tradeoff you want:
 
@@ -58,6 +58,18 @@ Use **Recalibrate nearby signal** with the iPhone nearby after moving the Mac,
 changing the phone's usual position, or making a substantial change to the
 room. Amado also safely reacquires the signal after Mac sleep, wake, or a
 Bluetooth interruption before it can lock again.
+
+## Temporary pause
+
+Use **Pause Auto-lock** in the menu bar for a 15-minute, 30-minute, one-hour,
+two-hour, or four-hour pause. **Settings › Auto-lock** also lets you choose an
+exact resume date and time.
+
+A pause stops the Bluetooth monitor rather than merely ignoring its final lock
+event. Auto-lock remains enabled, the deadline is saved locally, and monitoring
+starts again automatically at that time even if Amado restarts. Choose
+**Resume Auto-lock** to end the pause early. Turning auto-lock off clears an
+active pause.
 
 ## Manual mode
 

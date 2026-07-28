@@ -18,8 +18,12 @@ struct LockSenderFeature {
   struct State: Equatable {
     /// Shared with the widget/control extensions via the App Group container.
     @Shared(.fileStorage(PairedMacsStore.fileURL)) var pairedMacs = [PairedMac]()
+    /// Removed Macs whose unpair request has not been acknowledged yet.
+    @Shared(.fileStorage(PendingMacUnpairsStore.fileURL)) var pendingUnpairs = [PairedMac]()
     /// The Mac used by the static Control Center control.
     @Shared(.fileStorage(ControlCenterMacStore.fileURL)) var controlCenterSelection = ControlCenterMacSelection()
+    var clientID = ""
+    var clientName = ""
     var status = ""
     var macLockStatuses = [UUID: MacLockStatus]()
     /// The Mac a send is in flight to, for a per-row spinner.
@@ -28,11 +32,13 @@ struct LockSenderFeature {
 
   enum Action {
     case task
+    case clientIdentityLoaded(PairedClientIdentity)
     case lockMac(UUID)
     case watchRequestedLock(WatchLockRequest)
     case pasteTapped
     case scanned(String)
     case removeMac(UUID)
+    case unpairFinished(macID: UUID, succeeded: Bool)
     case selectControlCenterMac(UUID)
     case refreshStatusesRequested
     case macStatusResponse(macID: UUID, LockOperationResult)
@@ -55,7 +61,19 @@ struct LockSenderFeature {
             await send(.watchRequestedLock(request))
           }
         }
-        return .merge(watchEffect, refreshStatuses(&state))
+        return .merge(
+          watchEffect,
+          .run { send in
+            await send(.clientIdentityLoaded(lockDispatcher.clientIdentity()))
+          },
+          refreshStatuses(&state),
+          retryPendingUnpairs(state),
+        )
+
+      case .clientIdentityLoaded(let identity):
+        state.clientID = identity.id.uuidString
+        state.clientName = identity.name
+        return .none
 
       case .lockMac(let id):
         guard let mac = state.pairedMacs.first(where: { $0.id == id }) else { return .none }
@@ -70,9 +88,9 @@ struct LockSenderFeature {
         }
         return .run { send in
           do {
-            let outcome = try await lockDispatcher.lockFromWatch(mac)
-            request.respond(with: outcome)
-            await send(.lockResponse(macID: mac.id, .success(outcome)))
+            let response = try await lockDispatcher.lockFromWatch(mac)
+            request.respond(with: response.outcome)
+            await send(.lockResponse(macID: mac.id, .success(response)))
           } catch {
             let message = error.localizedDescription
             request.respond(withError: message)
@@ -91,10 +109,34 @@ struct LockSenderFeature {
         return add(&state, from: code)
 
       case .removeMac(let id):
+        let mac = state.pairedMacs.first { $0.id == id }
         state.$pairedMacs.withLock { $0.removeAll { $0.id == id } }
+        if let mac {
+          state.$pendingUnpairs.withLock {
+            if !$0.contains(where: { $0.secretBase64 == mac.secretBase64 }) {
+              $0.append(mac)
+            }
+          }
+        }
         state.macLockStatuses[id] = nil
         normalizeControlCenterSelection(&state)
-        return syncEffect(state)
+        return .merge(
+          syncEffect(state),
+          .run { send in
+            guard let mac else { return }
+            do {
+              _ = try await lockDispatcher.unpair(mac)
+              await send(.unpairFinished(macID: mac.id, succeeded: true))
+            } catch {
+              await send(.unpairFinished(macID: mac.id, succeeded: false))
+            }
+          },
+        )
+
+      case .unpairFinished(let macID, let succeeded):
+        guard succeeded else { return .none }
+        state.$pendingUnpairs.withLock { $0.removeAll { $0.id == macID } }
+        return .none
 
       case .selectControlCenterMac(let id):
         guard state.pairedMacs.contains(where: { $0.id == id }) else { return .none }
@@ -106,41 +148,70 @@ struct LockSenderFeature {
 
       case .macStatusResponse(let macID, let result):
         switch result {
-        case .success(.locked),
-             .success(.alreadyLocked):
-          state.macLockStatuses[macID] = .locked
-        case .success(.unlocked):
-          state.macLockStatuses[macID] = .unlocked
-        case .success,
-             .failure:
+        case .success(let response):
+          let identityChanged = apply(response.mac, to: macID, in: &state)
+          switch response.outcome {
+          case .locked,
+               .alreadyLocked:
+            state.macLockStatuses[macID] = .locked
+
+          case .unlocked:
+            state.macLockStatuses[macID] = .unlocked
+
+          case .notPaired:
+            let displayName = state.pairedMacs.first { $0.id == macID }?.displayName ?? "Mac"
+            removeLocally(macID, from: &state)
+            state.status = "\(displayName) was removed from the Mac. Pair it again to restore access."
+            return syncEffect(state)
+
+          case .helloAccepted,
+               .lockRequested,
+               .unpaired:
+            state.macLockStatuses[macID] = .unavailable
+          }
+          return identityChanged ? syncEffect(state) : .none
+
+        case .failure:
           state.macLockStatuses[macID] = .unavailable
+          return .none
         }
-        return .none
 
       case .lockResponse(let macID, let result):
         if state.sendingMacID == macID { state.sendingMacID = nil }
-        let displayName = state.pairedMacs.first { $0.id == macID }?.displayName ?? "Mac"
         switch result {
-        case .success(.alreadyLocked):
-          state.macLockStatuses[macID] = .locked
-          state.status = "\(displayName) is already locked"
+        case .success(let response):
+          let identityChanged = apply(response.mac, to: macID, in: &state)
+          let displayName = state.pairedMacs.first { $0.id == macID }?.displayName ?? "Mac"
+          switch response.outcome {
+          case .alreadyLocked:
+            state.macLockStatuses[macID] = .locked
+            state.status = "\(displayName) is already locked"
 
-        case .success(.lockRequested):
-          state.macLockStatuses[macID] = .unavailable
-          state.status = "Lock requested for \(displayName), but status confirmation was unavailable"
+          case .lockRequested:
+            state.macLockStatuses[macID] = .unavailable
+            state.status = "Lock requested for \(displayName), but status confirmation was unavailable"
 
-        case .success(.locked):
-          state.macLockStatuses[macID] = .locked
-          state.status = "Locked \(displayName) ✓"
+          case .locked:
+            state.macLockStatuses[macID] = .locked
+            state.status = "Locked \(displayName) ✓"
 
-        case .success:
-          state.status = "Unexpected response from \(displayName)"
+          case .notPaired:
+            removeLocally(macID, from: &state)
+            state.status = "\(displayName) was removed from the Mac. Pair it again to restore access."
+            return syncEffect(state)
+
+          case .helloAccepted,
+               .unlocked,
+               .unpaired:
+            state.status = "Unexpected response from \(displayName)"
+          }
+          return identityChanged ? syncEffect(state) : .none
 
         case .failure(let message):
           state.macLockStatuses[macID] = .unavailable
           state.status = "Failed: \(message)"
+          return .none
         }
-        return .none
       }
     }
   }
@@ -158,6 +229,39 @@ struct LockSenderFeature {
     state.$controlCenterSelection.withLock { $0.macID = fallbackID }
   }
 
+  private func removeLocally(_ id: UUID, from state: inout State) {
+    state.$pairedMacs.withLock { $0.removeAll { $0.id == id } }
+    state.macLockStatuses[id] = nil
+    if state.sendingMacID == id {
+      state.sendingMacID = nil
+    }
+    normalizeControlCenterSelection(&state)
+  }
+
+  @discardableResult
+  private func apply(
+    _ identity: PairedMacIdentity?,
+    to localID: UUID,
+    in state: inout State,
+  ) -> Bool {
+    guard
+      let identity,
+      let index = state.pairedMacs.firstIndex(where: { $0.id == localID })
+    else {
+      return false
+    }
+    let current = state.pairedMacs[index]
+    guard
+      current.deviceID != identity.id
+      || current.name != identity.name
+      || current.serviceName != identity.serviceName
+    else {
+      return false
+    }
+    state.$pairedMacs.withLock { $0[index].apply(identity) }
+    return true
+  }
+
   /// Push the current Mac list to the watch and refresh the widgets so their
   /// Mac picker / content reflect the change immediately.
   private func syncEffect(_ state: State) -> Effect<Action> {
@@ -173,8 +277,8 @@ struct LockSenderFeature {
     state.status = "Locking \(mac.displayName)…"
     return .run { send in
       do {
-        let outcome = try await lockDispatcher.lock(mac)
-        await send(.lockResponse(macID: mac.id, .success(outcome)))
+        let response = try await lockDispatcher.lock(mac)
+        await send(.lockResponse(macID: mac.id, .success(response)))
       } catch {
         await send(.lockResponse(macID: mac.id, .failure(error.localizedDescription)))
       }
@@ -190,10 +294,25 @@ struct LockSenderFeature {
       macs.map { mac in
         .run { send in
           do {
-            let outcome = try await lockDispatcher.status(mac)
-            await send(.macStatusResponse(macID: mac.id, .success(outcome)))
+            let response = try await lockDispatcher.status(mac)
+            await send(.macStatusResponse(macID: mac.id, .success(response)))
           } catch {
             await send(.macStatusResponse(macID: mac.id, .failure(error.localizedDescription)))
+          }
+        }
+      }
+    )
+  }
+
+  private func retryPendingUnpairs(_ state: State) -> Effect<Action> {
+    .merge(
+      state.pendingUnpairs.map { mac in
+        .run { send in
+          do {
+            _ = try await lockDispatcher.unpair(mac)
+            await send(.unpairFinished(macID: mac.id, succeeded: true))
+          } catch {
+            await send(.unpairFinished(macID: mac.id, succeeded: false))
           }
         }
       }
@@ -205,11 +324,29 @@ struct LockSenderFeature {
       state.status = "Not a valid Amado pairing code"
       return .none
     }
+    state.$pendingUnpairs.withLock {
+      $0.removeAll {
+        $0.secretBase64 == payload.secret
+          || (payload.deviceID != nil && $0.deviceID == payload.deviceID)
+      }
+    }
     let mac: PairedMac
-    if let index = state.pairedMacs.firstIndex(where: { $0.secretBase64 == payload.secret }) {
-      // Same Mac → re-pair: refresh its name in place.
-      if !payload.name.isEmpty {
-        state.$pairedMacs.withLock { $0[index].name = payload.name }
+    if
+      let index = state.pairedMacs.firstIndex(where: {
+        $0.secretBase64 == payload.secret
+          || (payload.deviceID != nil && $0.deviceID == payload.deviceID)
+      })
+    {
+      // Same Mac: retain the phone-local record ID so existing widgets and
+      // selections remain valid while refreshing the shared identity.
+      state.$pairedMacs.withLock {
+        $0[index].secretBase64 = payload.secret
+        $0[index].remoteHost = payload.remoteHost
+        $0[index].deviceID = payload.deviceID ?? $0[index].deviceID
+        $0[index].serviceName = payload.serviceName ?? $0[index].serviceName
+        if !payload.name.isEmpty {
+          $0[index].name = payload.name
+        }
       }
       mac = state.pairedMacs[index]
     } else {
@@ -223,11 +360,11 @@ struct LockSenderFeature {
     // Say hello so the Mac shows the pairing landed, and push the updated list
     // to the watch.
     return .merge(
-      .run { _ in try? await lockDispatcher.hello(mac) },
+      .run { _ in _ = try? await lockDispatcher.hello(mac) },
       .run { send in
         do {
-          let outcome = try await lockDispatcher.status(mac)
-          await send(.macStatusResponse(macID: mac.id, .success(outcome)))
+          let response = try await lockDispatcher.status(mac)
+          await send(.macStatusResponse(macID: mac.id, .success(response)))
         } catch {
           await send(.macStatusResponse(macID: mac.id, .failure(error.localizedDescription)))
         }
@@ -250,6 +387,6 @@ enum MacLockStatus: Equatable, Sendable {
 // MARK: - LockOperationResult
 
 enum LockOperationResult: Equatable, Sendable {
-  case success(LockCommandResponse.Outcome)
+  case success(LockCommandResponse)
   case failure(String)
 }

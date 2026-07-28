@@ -5,6 +5,7 @@ import Foundation
 enum ConfigLocation {
   static let directoryName = "amado"
   static let filename = "config.toml"
+  static let pairedClientsFilename = "paired-clients.json"
 
   /// `$XDG_CONFIG_HOME/amado/` when set, otherwise `~/.config/amado/`.
   static var directory: URL {
@@ -22,6 +23,10 @@ enum ConfigLocation {
 
   static var fileURL: URL {
     directory.appendingPathComponent(filename, isDirectory: false)
+  }
+
+  static var pairedClientsFileURL: URL {
+    directory.appendingPathComponent(pairedClientsFilename, isDirectory: false)
   }
 
   /// Ensures the config directory exists. Idempotent. Call before the first

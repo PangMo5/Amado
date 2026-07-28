@@ -56,6 +56,11 @@ struct ContentView: View {
           }
         }
 
+        DeviceIdentitySection(
+          name: store.clientName,
+          deviceID: store.clientID,
+        )
+
         Section {
           Button {
             isScanning = true
@@ -132,6 +137,28 @@ struct ContentView: View {
     }
   }
 
+}
+
+// MARK: - DeviceIdentitySection
+
+private struct DeviceIdentitySection: View {
+  let name: String
+  let deviceID: String
+
+  var body: some View {
+    Section {
+      LabeledContent("Name", value: name)
+      LabeledContent("Device ID") {
+        Text(deviceID)
+          .font(.caption.monospaced())
+          .textSelection(.enabled)
+      }
+    } header: {
+      Text("This iPhone")
+    } footer: {
+      Text("Amado assigns this stable name from the device ID.")
+    }
+  }
 }
 
 // MARK: - PairedMacRow
