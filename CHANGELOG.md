@@ -2,8 +2,9 @@
 
 Notable changes to the Amado macOS app are documented here. Versions follow semantic versioning, and the newest release appears first.
 
-## Unreleased
+## 1.0.3 (2026-08-03)
 
+- **Fixed the agent quitting on every command:** Answering a lock, status, pairing, or unpair request terminated the menu bar agent in optimized release builds, so the iPhone reported a failure and the Mac stopped responding until it was launched again. The one-shot response channel no longer races a timeout task to hand an answer back to the transport.
 - **Stable device identities:** The Mac now shares a stable UUID separately from the name supplied by macOS, keeping pairings linked without coupling identity to Bonjour discovery.
 - **Paired iPhone management:** See paired iPhones by their stable UUID-derived labels and remove individual installations from Mac Settings.
 - **Scheduled auto-lock pause:** Pause proximity auto-lock for a preset duration or until an exact time without disabling the feature.
