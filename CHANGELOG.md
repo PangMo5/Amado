@@ -4,6 +4,13 @@ Notable changes to the Amado macOS app are documented here. Versions follow sema
 
 ## Unreleased
 
+## 2.0.2 (2026-08-22)
+
+- Fixed a Power Helper update loop caused by re-registering a daemon before macOS finished removing its previous registration.
+- Debug builds now use a separate Power Helper identity so they cannot take ownership of the helper installed by a release build.
+- A failed helper installation can be retried directly without quitting and reopening Amado.
+- The first-install action remains available when macOS has not created its background-task record yet but the signed Power Helper is present in the app bundle.
+
 ## 2.0.1 (2026-08-22)
 
 - **Explicit Power Helper lifecycle:** Caffeinate now shows whether its helper is missing, awaiting approval, installed, or outdated. Installation and updates happen only from their dedicated buttons; removal is disabled when no helper is registered.

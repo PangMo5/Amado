@@ -135,6 +135,74 @@ struct ClosedLidModeTests {
   }
 
   @Test
+  func `failed Power Helper installation can be retried without relaunching`() async {
+    let recorder = ClosedLidRecorder()
+    let store = makeStore(recorder) {
+      $0.powerHelperStatus = .installationFailed(
+        "SMAppServiceErrorDomain 1: Operation not permitted"
+      )
+    }
+
+    #expect(store.state.powerHelperStatus.canInstall)
+    #expect(!store.state.powerHelperStatus.canRemove)
+    #expect(store.state.powerHelperStatus.installButtonTitle == "Try Install Again")
+
+    await store.send(.caffeinateInstallHelperTapped) {
+      $0.isInstallingPowerHelper = true
+    }
+    await store.receive(\.caffeinateInstallHelperResponse) {
+      $0.powerHelperStatus = .installed(.current)
+      $0.isInstallingPowerHelper = false
+    }
+
+    await store.finish()
+    #expect(await recorder.helperInstallCount == 1)
+  }
+
+  @Test
+  func `Debug and Release use separate Power Helper identities`() {
+    #expect(PowerHelperIdentity.debug != PowerHelperIdentity.release)
+    #expect(
+      PowerHelperIdentity.debug.helperIdentifier
+        == "dev.PangMo5.Amado.debug.PowerHelper"
+    )
+    #expect(
+      PowerHelperIdentity.release.helperIdentifier
+        == "dev.PangMo5.Amado.PowerHelper"
+    )
+    #if DEBUG
+    #expect(PowerHelperConstants.identity == .debug)
+    #endif
+  }
+
+  @Test
+  func `bundled Power Helper requires both its plist and executable`() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appending(path: UUID().uuidString, directoryHint: .isDirectory)
+    let daemons = root.appending(
+      path: "Contents/Library/LaunchDaemons",
+      directoryHint: .isDirectory,
+    )
+    let executables = root.appending(path: "Contents/MacOS", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: daemons, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: executables, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let identity = PowerHelperIdentity.debug
+    let plist = daemons.appending(path: identity.plistName)
+    let executable = executables.appending(path: "AmadoPowerHelper")
+    try Data().write(to: plist)
+    #expect(!identity.isBundled(in: root))
+
+    try Data().write(to: executable)
+    try FileManager.default.setAttributes(
+      [.posixPermissions: 0o755],
+      ofItemAtPath: executable.path,
+    )
+    #expect(identity.isBundled(in: root))
+  }
+
+  @Test
   func `Power Helper removal is ignored when it is not installed`() async {
     let recorder = ClosedLidRecorder()
     let store = makeStore(recorder) {

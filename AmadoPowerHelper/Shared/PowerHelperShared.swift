@@ -49,6 +49,38 @@ struct PowerHelperBuild: Equatable, Sendable {
   }
 }
 
+// MARK: - PowerHelperIdentity
+
+struct PowerHelperIdentity: Equatable, Sendable {
+  static let release = Self(
+    helperIdentifier: "dev.PangMo5.Amado.PowerHelper",
+    plistName: "dev.PangMo5.Amado.PowerHelper.plist",
+  )
+  static let debug = Self(
+    helperIdentifier: "dev.PangMo5.Amado.debug.PowerHelper",
+    plistName: "dev.PangMo5.Amado.debug.PowerHelper.plist",
+  )
+
+  let helperIdentifier: String
+  let plistName: String
+
+  var machServiceName: String {
+    helperIdentifier
+  }
+
+  func isBundled(in appBundleURL: URL, fileManager: FileManager = .default) -> Bool {
+    let contentsURL = appBundleURL.appending(path: "Contents", directoryHint: .isDirectory)
+    let plistURL = contentsURL
+      .appending(path: "Library/LaunchDaemons", directoryHint: .isDirectory)
+      .appending(path: plistName)
+    let executableURL = contentsURL
+      .appending(path: "MacOS", directoryHint: .isDirectory)
+      .appending(path: "AmadoPowerHelper")
+    return fileManager.fileExists(atPath: plistURL.path)
+      && fileManager.isExecutableFile(atPath: executableURL.path)
+  }
+}
+
 // MARK: - PowerHelperConstants
 
 enum PowerHelperConstants {
@@ -56,9 +88,24 @@ enum PowerHelperConstants {
     "dev.PangMo5.Amado",
     "dev.PangMo5.Amado.debug",
   ]
-  static let helperIdentifier = "dev.PangMo5.Amado.PowerHelper"
-  static let machServiceName = helperIdentifier
-  static let plistName = "dev.PangMo5.Amado.PowerHelper.plist"
+
+  #if DEBUG
+  static let identity = PowerHelperIdentity.debug
+  #else
+  static let identity = PowerHelperIdentity.release
+  #endif
+
+  static var helperIdentifier: String {
+    identity.helperIdentifier
+  }
+
+  static var machServiceName: String {
+    identity.machServiceName
+  }
+
+  static var plistName: String {
+    identity.plistName
+  }
 }
 
 // MARK: - PowerHelperCodeSigning

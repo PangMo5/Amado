@@ -47,6 +47,7 @@ enum PowerHelperInstallationStatus: Equatable, Sendable {
   case requiresApproval
   case installed(PowerHelperBuild)
   case updateAvailable(installed: PowerHelperBuild?, bundled: PowerHelperBuild)
+  case installationFailed(String)
   case failed(reason: String, isRegistered: Bool)
 
   // MARK: Internal
@@ -63,6 +64,8 @@ enum PowerHelperInstallationStatus: Equatable, Sendable {
       "Installed — version \(build.displayName)"
     case .updateAvailable(let installed, let bundled):
       "Update available — \(installed?.displayName ?? "unknown") → \(bundled.displayName)"
+    case .installationFailed(let reason):
+      "Installation failed: \(reason)"
     case .failed(let reason, _):
       "Unavailable: \(reason)"
     }
@@ -71,7 +74,8 @@ enum PowerHelperInstallationStatus: Equatable, Sendable {
   var canInstall: Bool {
     switch self {
     case .notInstalled,
-         .updateAvailable:
+         .updateAvailable,
+         .installationFailed:
       true
     case .checking,
          .requiresApproval,
@@ -90,7 +94,8 @@ enum PowerHelperInstallationStatus: Equatable, Sendable {
     case .failed(_, let isRegistered):
       isRegistered
     case .checking,
-         .notInstalled:
+         .notInstalled,
+         .installationFailed:
       false
     }
   }
@@ -102,10 +107,12 @@ enum PowerHelperInstallationStatus: Equatable, Sendable {
 
   var installButtonTitle: String {
     if case .updateAvailable = self { return "Update Power Helper" }
+    if case .installationFailed = self { return "Try Install Again" }
     return "Install Power Helper"
   }
 
   var diagnostic: String {
+    if case .installationFailed(let reason) = self { return reason }
     if case .failed(let reason, _) = self { return reason }
     return summary
   }
@@ -286,7 +293,9 @@ private actor ClosedLidController {
       return .notInstalled
 
     case .notFound:
-      return .failed(reason: "The bundled Power Helper is missing", isRegistered: false)
+      return bundledHelperIsPresent
+        ? .notInstalled
+        : .failed(reason: "The bundled Power Helper is missing", isRegistered: false)
 
     @unknown default:
       return .failed(reason: "macOS returned an unknown Power Helper state", isRegistered: false)
@@ -309,6 +318,9 @@ private actor ClosedLidController {
       return await replaceRegisteredHelper()
 
     case .notInstalled:
+      return await registerHelper()
+
+    case .installationFailed:
       return await registerHelper()
 
     case .checking:
@@ -401,6 +413,10 @@ private actor ClosedLidController {
   private var connection: NSXPCConnection?
   private var connectionID: UUID?
 
+  private var bundledHelperIsPresent: Bool {
+    PowerHelperConstants.identity.isBundled(in: Bundle.main.bundleURL)
+  }
+
   private func caffeinateReadiness() -> ClosedLidControlStatus {
     switch helperService.status {
     case .enabled:
@@ -413,7 +429,9 @@ private actor ClosedLidController {
       return .helperNotInstalled
 
     case .notFound:
-      return .failed("The bundled Power Helper is missing")
+      return bundledHelperIsPresent
+        ? .helperNotInstalled
+        : .failed("The bundled Power Helper is missing")
 
     @unknown default:
       return .failed("macOS returned an unknown Power Helper state")
@@ -427,10 +445,21 @@ private actor ClosedLidController {
       if helperService.status == .requiresApproval {
         return .requiresApproval
       }
+      if helperService.status == .enabled {
+        return await helperStatus()
+      }
       let nsError = error as NSError
       logger.error(
         "Power Helper registration failed: \(nsError.domain, privacy: .public) \(nsError.code, privacy: .public) — \(nsError.localizedDescription, privacy: .public)"
       )
+      if
+        helperService.status == .notRegistered
+        || (helperService.status == .notFound && bundledHelperIsPresent)
+      {
+        return .installationFailed(
+          "\(nsError.domain) \(nsError.code): \(nsError.localizedDescription)"
+        )
+      }
       return .failed(
         reason: "Power Helper installation failed (\(nsError.domain) \(nsError.code)): "
           + nsError.localizedDescription,
@@ -455,6 +484,15 @@ private actor ClosedLidController {
           isRegistered: true,
         )
       }
+    }
+
+    // SMAppService can reject an immediate re-registration even after its
+    // async unregister call completes. Give backgroundtaskmanagementd time to
+    // retire the old item before submitting the replacement.
+    do {
+      try await Task.sleep(for: .seconds(2))
+    } catch {
+      return await helperStatus()
     }
     return await registerHelper()
   }

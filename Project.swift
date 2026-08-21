@@ -9,7 +9,7 @@ let bundleIdPrefix = "dev.PangMo5"
 // (TUIST_DEVELOPMENT_TEAM, …); in CI they come from repository secrets.
 let developmentTeam = Environment.developmentTeam.getString(default: "")
 let sparklePublicEDKey = Environment.sparklePublicEdKey.getString(default: "")
-let macOSVersion = "2.0.1"
+let macOSVersion = "2.0.2"
 let iOSVersion = "1.0.0"
 // Release workflows inject the build number. Local builds use 1.
 let buildNumber = Environment.buildNumber.getString(default: "1")
@@ -109,10 +109,28 @@ let project = Project(
         .wrapper(
           name: "Embed Power Helper LaunchDaemon",
           subpath: "Contents/Library/LaunchDaemons",
-          files: ["AmadoPowerHelper/Resources/dev.PangMo5.Amado.PowerHelper.plist"],
+          files: [
+            "AmadoPowerHelper/Resources/dev.PangMo5.Amado.PowerHelper.plist",
+            "AmadoPowerHelper/Resources/dev.PangMo5.Amado.debug.PowerHelper.plist",
+          ],
         ),
       ],
       entitlements: .file(path: "Amado/Amado.entitlements"),
+      scripts: [
+        .post(
+          script: """
+            daemon_directory="${TARGET_BUILD_DIR}/${WRAPPER_NAME}/Contents/Library/LaunchDaemons"
+            if [ "${CONFIGURATION}" = "Debug" ]; then
+              inactive_helper_plist="${daemon_directory}/dev.PangMo5.Amado.PowerHelper.plist"
+            else
+              inactive_helper_plist="${daemon_directory}/dev.PangMo5.Amado.debug.PowerHelper.plist"
+            fi
+            /bin/rm -f "${inactive_helper_plist}"
+            """,
+          name: "Prune Inactive Power Helper LaunchDaemon",
+          basedOnDependencyAnalysis: false,
+        )
+      ],
       dependencies: [
         .target(name: "AmadoKit"),
         .target(name: "AmadoPowerHelper"),
@@ -155,14 +173,22 @@ let project = Project(
       deploymentTargets: .macOS("15.0"),
       infoPlist: .default,
       sources: ["AmadoPowerHelper/Sources/**", "AmadoPowerHelper/Shared/**"],
-      settings: .settings(base: signingSettings.merging([
-        "PRODUCT_NAME": "AmadoPowerHelper",
-        "MARKETING_VERSION": SettingValue(stringLiteral: macOSVersion),
-        "CURRENT_PROJECT_VERSION": SettingValue(stringLiteral: buildNumber),
-        "GENERATE_INFOPLIST_FILE": "YES",
-        "CREATE_INFOPLIST_SECTION_IN_BINARY": "YES",
-        "SKIP_INSTALL": "YES",
-      ]) { $1 }),
+      settings: .settings(
+        base: signingSettings.merging([
+          "PRODUCT_NAME": "AmadoPowerHelper",
+          "MARKETING_VERSION": SettingValue(stringLiteral: macOSVersion),
+          "CURRENT_PROJECT_VERSION": SettingValue(stringLiteral: buildNumber),
+          "GENERATE_INFOPLIST_FILE": "YES",
+          "CREATE_INFOPLIST_SECTION_IN_BINARY": "YES",
+          "SKIP_INSTALL": "YES",
+        ]) { $1 },
+        configurations: [
+          .debug(name: "Debug", settings: [
+            "PRODUCT_BUNDLE_IDENTIFIER": "\(bundleIdPrefix).Amado.debug.PowerHelper"
+          ]),
+          .release(name: "Release"),
+        ],
+      ),
     ),
 
     // MARK: - AmadoiOS (iPhone client)

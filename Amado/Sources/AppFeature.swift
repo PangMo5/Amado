@@ -505,6 +505,7 @@ struct AppFeature {
         case .notInstalled,
              .requiresApproval,
              .updateAvailable,
+             .installationFailed,
              .failed:
           return resetUnavailableCaffeinate(in: &state)
 
@@ -553,7 +554,8 @@ struct AppFeature {
             .run { _ in await closedLidControl.openHelperSettings() },
           )
 
-        case .failed:
+        case .installationFailed,
+             .failed:
           return raise(
             .closedLidPower,
             detail: status.summary,
