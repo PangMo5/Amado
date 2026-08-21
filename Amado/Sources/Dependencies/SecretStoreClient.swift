@@ -2,6 +2,7 @@ import AmadoKit
 import Dependencies
 import DependenciesMacros
 import Foundation
+import OSLog
 import Security
 
 // MARK: - SecretStoreClient
@@ -13,7 +14,10 @@ import Security
 @DependencyClient
 struct SecretStoreClient: Sendable {
   var load: @Sendable () -> String?
-  var save: @Sendable (String) -> Void
+  /// Returns whether the secret actually reached the Keychain. A silent
+  /// failure here loses every pairing on the next launch, so the caller has to
+  /// know.
+  var save: @Sendable (String) -> Bool = { _ in true }
 }
 
 // MARK: DependencyKey
@@ -27,7 +31,7 @@ extension SecretStoreClient: DependencyKey {
     save: { AmadoKeychain.saveSecret($0) },
   )
 
-  static let testValue = SecretStoreClient(load: { nil }, save: { _ in })
+  static let testValue = SecretStoreClient(load: { nil }, save: { _ in true })
   static let previewValue = testValue
 }
 
@@ -63,7 +67,8 @@ enum AmadoKeychain {
     return secret
   }
 
-  static func saveSecret(_ secret: String) {
+  @discardableResult
+  static func saveSecret(_ secret: String) -> Bool {
     let base: [String: Any] = [
       kSecClass as String: kSecClassGenericPassword,
       kSecAttrService as String: service,
@@ -74,7 +79,12 @@ enum AmadoKeychain {
     var attributes = base
     attributes[kSecValueData as String] = Data(secret.utf8)
     attributes[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
-    SecItemAdd(attributes as CFDictionary, nil)
+    let status = SecItemAdd(attributes as CFDictionary, nil)
+    guard status == errSecSuccess else {
+      logger.error("keychain write failed with OSStatus \(status, privacy: .public)")
+      return false
+    }
+    return true
   }
 
   /// One-time migration of the pre-Keychain secret from UserDefaults. No-op once
@@ -97,3 +107,5 @@ enum AmadoKeychain {
   private static let legacyDefaultsKey = "amado.pairingSecret"
 
 }
+
+private let logger = Logger(subsystem: "dev.PangMo5.Amado", category: "Keychain")

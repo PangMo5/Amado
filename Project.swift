@@ -262,6 +262,8 @@ let project = Project(
       dependencies: [
         .target(name: "Amado"),
         .target(name: "AmadoKit"),
+        .external(name: "ComposableArchitecture"),
+        .external(name: "Sharing"),
         .external(name: "TOML"),
       ],
     ),

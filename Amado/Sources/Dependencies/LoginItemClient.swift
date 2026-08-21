@@ -9,8 +9,10 @@ import ServiceManagement
 /// so the agent starts automatically at login.
 @DependencyClient
 struct LoginItemClient: Sendable {
-  /// Register (true) or unregister (false) the app as a login item.
-  var setEnabled: @Sendable (Bool) -> Void
+  /// Register (true) or unregister (false) the app as a login item. Returns
+  /// the failure reason when macOS refused, so the toggle does not silently
+  /// disagree with reality.
+  var setEnabled: @Sendable (Bool) -> String? = { _ in nil }
   /// Whether the app is currently registered as a login item.
   var isEnabled: @Sendable () -> Bool = { false }
 }
@@ -32,12 +34,14 @@ extension LoginItemClient: DependencyKey {
         }
       } catch {
         logger.error("login item \(enabled ? "register" : "unregister") failed: \(error.localizedDescription, privacy: .public)")
+        return error.localizedDescription
       }
+      return nil
     },
     isEnabled: { SMAppService.mainApp.status == .enabled },
   )
 
-  static let testValue = LoginItemClient(setEnabled: { _ in }, isEnabled: { false })
+  static let testValue = LoginItemClient(setEnabled: { _ in nil }, isEnabled: { false })
   static let previewValue = testValue
 }
 

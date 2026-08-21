@@ -50,9 +50,19 @@ private struct MenuBarLabel: View {
 
   var body: some View {
     // Open lock while the agent is up (the Mac is unlocked — you only see the
-    // menu bar then); slashed lock while the listener is still starting.
-    Image(systemSymbol: store.isListening ? .lockOpenFill : .lockSlashFill)
+    // menu bar then), and a badged variant when something needs attention, so
+    // a broken agent is visible without opening the menu.
+    Image(systemSymbol: symbol)
       .task { await store.send(.task).finish() }
+  }
+
+  private var symbol: SFSymbol {
+    switch store.health {
+    case .impaired: .lockOpenTrianglebadgeExclamationmarkFill
+    case .paused: .lockBadgeClock
+    case .listening: .lockOpenFill
+    case .starting: .lockSlashFill
+    }
   }
 }
 

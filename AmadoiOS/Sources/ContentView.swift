@@ -85,13 +85,12 @@ struct ContentView: View {
       }
       .navigationTitle("Amado")
       .safeAreaInset(edge: .bottom) {
-        if !store.status.isEmpty {
-          Text(store.status)
-            .font(.callout)
-            .foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity)
-            .padding()
-            .background(.thinMaterial)
+        if let banner = store.banner {
+          LockBannerView(
+            banner: banner,
+            onRetry: { store.send(.bannerRetryTapped) },
+            onDismiss: { store.send(.bannerDismissed) },
+          )
         }
       }
       .sheet(isPresented: $isScanning) {
@@ -134,6 +133,71 @@ struct ContentView: View {
           Button("Cancel") { isScanning = false }
         }
       }
+    }
+  }
+
+}
+
+// MARK: - LockBannerView
+
+/// The feedback strip above the tab bar. A failure is tinted, keeps its text
+/// until dismissed, and offers to run the failed action again — the previous
+/// version was an untinted line that scrolled past with no way to act on it.
+private struct LockBannerView: View {
+
+  // MARK: Internal
+
+  let banner: LockBanner
+  let onRetry: () -> Void
+  let onDismiss: () -> Void
+
+  var body: some View {
+    HStack(alignment: .firstTextBaseline, spacing: 10) {
+      if banner.kind == .progress {
+        ProgressView().controlSize(.small)
+      } else {
+        Image(systemName: symbol).foregroundStyle(tint)
+      }
+
+      Text(banner.message)
+        .font(.callout)
+        .foregroundStyle(banner.kind == .failure ? .primary : .secondary)
+        .frame(maxWidth: .infinity, alignment: .leading)
+
+      if banner.retry != nil {
+        Button("Retry", action: onRetry)
+          .font(.callout.weight(.semibold))
+      }
+      if banner.kind != .progress {
+        Button(action: onDismiss) {
+          Image(systemSymbol: .xmark)
+        }
+        .foregroundStyle(.secondary)
+        .accessibilityLabel("Dismiss")
+      }
+    }
+    .buttonStyle(.plain)
+    .padding(.horizontal)
+    .padding(.vertical, 12)
+    .frame(maxWidth: .infinity)
+    .background(.thinMaterial)
+  }
+
+  // MARK: Private
+
+  private var symbol: String {
+    switch banner.kind {
+    case .success: "checkmark.circle.fill"
+    case .failure: "exclamationmark.triangle.fill"
+    case .progress: "ellipsis"
+    }
+  }
+
+  private var tint: Color {
+    switch banner.kind {
+    case .success: .green
+    case .failure: .orange
+    case .progress: .secondary
     }
   }
 

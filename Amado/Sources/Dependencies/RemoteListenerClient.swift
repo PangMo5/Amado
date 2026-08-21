@@ -5,6 +5,15 @@ import Foundation
 import Hummingbird
 import OSLog
 
+// MARK: - RemoteListenerState
+
+/// Whether the tunnel-facing HTTP server is up. Separate from the LAN listener
+/// because losing it only costs off-network access, not everything.
+enum RemoteListenerState: Equatable, Sendable {
+  case running
+  case stopped(reason: String)
+}
+
 // MARK: - RemoteListenerClient
 
 /// The Mac agent's tunnel-facing intake. Runs a small HTTP server on
@@ -17,9 +26,13 @@ import OSLog
 /// signed command result.
 @DependencyClient
 struct RemoteListenerClient: Sendable {
-  /// Start the HTTP server. Idempotent.
+  /// Start the HTTP server, retrying if it stops. Idempotent.
   var start: @Sendable () async -> Void
   var incoming: @Sendable () -> AsyncStream<IncomingLockRequest> = { AsyncStream { _ in } }
+  /// One element per availability change.
+  var state: @Sendable () -> AsyncStream<RemoteListenerState> = { AsyncStream { _ in } }
+  /// Bring the server up now, without waiting out the backoff.
+  var retry: @Sendable () async -> Void
 }
 
 // MARK: DependencyKey
@@ -30,10 +43,17 @@ extension RemoteListenerClient: DependencyKey {
     return RemoteListenerClient(
       start: { await listener.start() },
       incoming: { listener.stream },
+      state: { listener.states },
+      retry: { await listener.retryNow() },
     )
   }()
 
-  static let testValue = RemoteListenerClient(start: { }, incoming: { AsyncStream { _ in } })
+  static let testValue = RemoteListenerClient(
+    start: { },
+    incoming: { AsyncStream { _ in } },
+    state: { AsyncStream { _ in } },
+    retry: { },
+  )
   static let previewValue = testValue
 }
 
@@ -51,14 +71,19 @@ private actor RemoteListener {
   // MARK: Lifecycle
 
   init() {
-    var continuation: AsyncStream<IncomingLockRequest>.Continuation!
-    stream = AsyncStream(bufferingPolicy: .unbounded) { continuation = $0 }
-    self.continuation = continuation
+    var requests: AsyncStream<IncomingLockRequest>.Continuation!
+    stream = AsyncStream(bufferingPolicy: .unbounded) { requests = $0 }
+    continuation = requests
+
+    var states: AsyncStream<RemoteListenerState>.Continuation!
+    self.states = AsyncStream(bufferingPolicy: .bufferingNewest(1)) { states = $0 }
+    stateContinuation = states
   }
 
   // MARK: Internal
 
   let stream: AsyncStream<IncomingLockRequest>
+  let states: AsyncStream<RemoteListenerState>
 
   func start() {
     guard task == nil else { return }
@@ -108,23 +133,53 @@ private actor RemoteListener {
       router: router,
       configuration: .init(address: .hostname("127.0.0.1", port: AmadoService.localHTTPPort)),
     )
-    task = Task {
-      do { try await app.runService() }
-      catch { logger.error("http server stopped: \(error.localizedDescription, privacy: .public)") }
+    task = Task { [weak self] in
+      do {
+        try await app.runService()
+        await self?.serviceEnded(reason: "The remote server stopped")
+      } catch {
+        logger.error("http server stopped: \(error.localizedDescription, privacy: .public)")
+        await self?.serviceEnded(reason: error.localizedDescription)
+      }
     }
+    stateContinuation.yield(.running)
     logger.log("remote http server on 127.0.0.1:\(AmadoService.localHTTPPort, privacy: .public)")
+  }
+
+  /// Skip the remaining backoff. Used by the menu's "Try Again".
+  func retryNow() {
+    retryDelay = Self.initialRetryDelay
+    start()
   }
 
   // MARK: Private
 
   private static let maxBody = 64 * 1024
+  private static let initialRetryDelay: TimeInterval = 2
+  private static let maxRetryDelay: TimeInterval = 60
+  private static let retries = DispatchQueue(label: "dev.PangMo5.Amado.remote-listener-retry")
 
   private let continuation: AsyncStream<IncomingLockRequest>.Continuation
+  private let stateContinuation: AsyncStream<RemoteListenerState>.Continuation
   private var task: Task<Void, Never>?
+  private var retryDelay = RemoteListener.initialRetryDelay
 
   private static func currentSecret() -> PairingSecret? {
     guard let base64 = AmadoKeychain.loadSecret() else { return nil }
     return PairingSecret(base64: base64)
+  }
+
+  /// The server task finished, which for a long-running service always means
+  /// something went wrong. Report it and line up another attempt.
+  private func serviceEnded(reason: String) {
+    task = nil
+    stateContinuation.yield(.stopped(reason: reason))
+
+    let delay = retryDelay
+    retryDelay = min(retryDelay * 2, Self.maxRetryDelay)
+    Self.retries.asyncAfter(deadline: .now() + delay) { [weak self] in
+      Task { await self?.start() }
+    }
   }
 
 }
