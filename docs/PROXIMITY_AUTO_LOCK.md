@@ -1,8 +1,8 @@
 # Proximity Auto-lock
 
-One tap, or just walk away. Proximity auto-lock is one of Amado's two primary
-ways to lock: the Mac watches for your iPhone to leave and closes up without a
-button press.
+Proximity Auto-lock is Amado's no-tap path: the Mac watches for your iPhone to
+leave and closes up without a button press. It remains independent of the
+local Caffeinate policy that controls lid-close sleep.
 
 Proximity locking is performed by the Mac, so the Amado iPhone app does not
 need to be open. Sign the Mac and iPhone into the same iCloud account so macOS
@@ -70,6 +70,12 @@ event. Auto-lock remains enabled, the deadline is saved locally, and monitoring
 starts again automatically at that time even if Amado restarts. Choose
 **Resume Auto-lock** to end the pause early. Turning auto-lock off clears an
 active pause.
+
+Selecting Caffeinate's **Stay awake, keep unlocked** policy asks whether
+Auto-lock should pause for the lifetime of that policy. This policy-bound pause
+also stops the Bluetooth monitor and ends automatically when Caffeinate changes
+to Lock or Off. If Auto-lock remains enabled instead, a departure locks the
+session but does not put the caffeinated Mac to sleep.
 
 ## Manual mode
 

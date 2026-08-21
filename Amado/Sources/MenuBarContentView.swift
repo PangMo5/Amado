@@ -13,79 +13,130 @@ struct MenuBarContentView: View {
   @Bindable var store: StoreOf<AppFeature>
 
   var body: some View {
-    Text(headline)
+    Group {
+      Text(headline)
 
-    if let issue = store.issues.first {
-      Text(issue.detail)
-      IssueRecoveryButton(issue: issue) { store.send(.issueRecoveryTapped(issue.kind)) }
-      // More than one thing can be broken at once; the rest live in Settings
-      // so the menu stays a menu.
-      if store.issues.count > 1 {
-        Text("\(store.issues.count - 1) more issue\(store.issues.count == 2 ? "" : "s") in Settings")
+      if let issue = store.issues.first {
+        Text(issue.detail)
+        IssueRecoveryButton(issue: issue) { store.send(.issueRecoveryTapped(issue.kind)) }
+        // More than one thing can be broken at once; the rest live in Settings
+        // so the menu stays a menu.
+        if store.issues.count > 1 {
+          Text("\(store.issues.count - 1) more issue\(store.issues.count == 2 ? "" : "s") in Settings")
+        }
+        Divider()
       }
-      Divider()
-    }
 
-    Button("Lock this Mac now") {
-      store.send(.lockNowTapped)
-    }
+      Button("Lock this Mac now") {
+        store.send(.lockNowTapped)
+      }
 
-    if store.config.proximityAutoLock, !store.config.proximityDeviceID.isEmpty {
-      Menu("Pause Auto-lock") {
-        if let deadline = store.proximityPauseUntil {
-          Text("Paused until \(deadline.formatted(date: .abbreviated, time: .shortened))")
-          Button("Resume Auto-lock") {
-            store.send(.proximityPauseResumeTapped)
-          }
+      Picker(
+        "Caffeinate",
+        selection: Binding(
+          get: { store.config.closedLidMode },
+          set: { store.send(.closedLidModeChanged($0)) },
+        ),
+      ) {
+        ForEach(ClosedLidMode.allCases, id: \.self) { mode in
+          Text(mode.title).tag(mode)
+        }
+      }
+      if store.config.closedLidMode.keepsAwake {
+        if store.isApplyingClosedLidMode {
+          Text("Starting Caffeinate…")
         } else {
-          ForEach(AppFeature.ProximityPausePreset.allCases, id: \.self) { preset in
-            Button(preset.title) {
-              store.send(.proximityPausePresetSelected(preset))
+          Text(store.closedLidStatus.summary)
+        }
+        Label(
+          "Keep ventilated — never use in a bag",
+          systemImage: "exclamationmark.triangle.fill",
+        )
+        .foregroundStyle(.orange)
+      }
+
+      if store.config.proximityAutoLock, !store.config.proximityDeviceID.isEmpty {
+        Menu("Pause Auto-lock") {
+          if let pause = store.activeAutoLockPause {
+            switch pause {
+            case .until(let deadline):
+              Text("Paused until \(deadline.formatted(date: .abbreviated, time: .shortened))")
+            case .whileCaffeinating:
+              Text("Paused while Caffeinate keeps unlocked")
+            }
+            Button("Resume Auto-lock") {
+              store.send(.proximityPauseResumeTapped)
+            }
+          } else {
+            ForEach(AppFeature.ProximityPausePreset.allCases, id: \.self) { preset in
+              Button(preset.title) {
+                store.send(.proximityPausePresetSelected(preset))
+              }
             }
           }
         }
       }
-    }
 
-    Divider()
+      Divider()
 
-    if store.pairedClients.isEmpty {
-      OpenWindowButton(id: "pairing", title: "Show pairing code…")
-    }
-    OpenWindowButton(id: "settings", title: "Settings…", shortcut: ",")
-    Button("Check for Updates…") {
-      store.send(.checkForUpdatesTapped)
-    }
+      if store.pairedClients.isEmpty {
+        OpenWindowButton(id: "pairing", title: "Show pairing code…")
+      }
+      OpenWindowButton(id: "settings", title: "Settings…", shortcut: ",")
+      Button("Check for Updates…") {
+        store.send(.checkForUpdatesTapped)
+      }
 
-    Divider()
+      Divider()
 
-    if store.activity.isEmpty {
-      Text("No activity yet")
-    } else {
-      Section("Recent") {
-        ForEach(Array(store.activity.prefix(8))) { entry in
-          Text(entry.message)
+      if store.activity.isEmpty {
+        Text("No activity yet")
+      } else {
+        Section("Recent") {
+          ForEach(Array(store.activity.prefix(8))) { entry in
+            Text(entry.message)
+          }
         }
       }
-    }
 
-    Divider()
+      Divider()
 
-    Button("Quit Amado") {
-      NSApplication.shared.terminate(nil)
+      Button("Quit Amado") {
+        NSApplication.shared.terminate(nil)
+      }
+      .keyboardShortcut("q")
     }
-    .keyboardShortcut("q")
   }
 
   // MARK: Private
 
   private var headline: String {
     switch store.health {
-    case .impaired(let issue): "Amado — \(issue.title)"
-    case .paused(let deadline):
-      "Amado — auto-lock paused until \(deadline.formatted(date: .omitted, time: .shortened))"
-    case .listening: "Amado — listening"
-    case .starting: "Amado — starting…"
+    case .impaired(let issue):
+      return "Amado — \(issue.title)"
+
+    case .paused(let pause):
+      return "Amado — \(autoLockPauseDescription(pause))"
+
+    case .closedLidAwake(let policy, let autoLockPause):
+      let prefix = "Amado — Caffeinate active, \(policy.statusDescription)"
+      guard let autoLockPause else { return prefix }
+      return "\(prefix); \(autoLockPauseDescription(autoLockPause))"
+
+    case .listening:
+      return "Amado — listening"
+
+    case .starting:
+      return "Amado — starting…"
+    }
+  }
+
+  private func autoLockPauseDescription(_ pause: AutoLockPause) -> String {
+    switch pause {
+    case .until(let deadline):
+      "auto-lock paused until \(deadline.formatted(date: .omitted, time: .shortened))"
+    case .whileCaffeinating:
+      "auto-lock paused while Caffeinate keeps unlocked"
     }
   }
 
@@ -110,6 +161,9 @@ private struct IssueRecoveryButton: View {
 
     case .openSettings(let url):
       Button("Open Settings") { openURL(url) }
+
+    case .openLoginItems:
+      Button("Open Settings", action: onRetry)
 
     case nil:
       EmptyView()

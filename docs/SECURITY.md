@@ -8,6 +8,10 @@ Amado reaches that capability in two ways: authenticated one-tap commands from
 your Apple devices, and local Bluetooth proximity auto-lock when you leave.
 Both paths can only lock.
 
+Caffeinate is a separate local power-management capability. It does not
+add a network endpoint, but it can intentionally keep a MacBook running while
+its lid is closed.
+
 ## Trust model
 
 - Pairing creates a random 256-bit secret on the Mac and transfers it through a
@@ -33,6 +37,12 @@ Both paths can only lock.
   HTTP listener binds only to `127.0.0.1:51521`.
 - Proximity auto-lock runs on the Mac and observes the selected iPhone's
   Bluetooth signal. It does not expose another network command endpoint.
+- Caffeinate uses a bundled LaunchDaemon approved by an administrator
+  through macOS Service Management. The root helper's XPC peer is restricted
+  to Amado binaries signed by the same Developer ID team, and its protocol can
+  only enable or disable `pmset disablesleep`; it cannot run caller-supplied
+  commands. The override is held as an XPC lease, so an app disconnect or
+  helper restart restores normal sleep.
 
 ## Security boundaries
 
@@ -54,6 +64,27 @@ copy of that credential.
 
 Device UUIDs are identifiers, not secrets. Possessing a UUID does not authorize
 a command; the pairing secret and valid HMAC are still required.
+
+The **Stay awake and lock** Caffeinate policy locks the session before
+requesting display sleep. Choosing **Stay awake, keep unlocked** is an explicit
+reduction in physical security: the Mac remains unlocked while it continues
+running.
+
+## Caffeinate operational safety
+
+Caffeinate overrides the MacBook's normal lid-close sleep behavior; neither
+the locked policy nor a dark built-in display means the computer has stopped
+running. Closed-lid workloads can consume battery and generate heat. Use the
+Mac only on a hard, stable, well-ventilated surface, never in a bag, bedding,
+or another enclosed space, and follow [Apple's operating-temperature and
+ventilation guidance](https://support.apple.com/102336).
+
+The user is responsible for monitoring heat, battery level, workload, and
+physical access, and for disabling Caffeinate when conditions become unsafe.
+To the extent permitted by applicable law, Amado and its contributors are not
+liable for resulting battery depletion, interruption, data loss, hardware
+damage, overheating, or injury. See the warranty and liability limitations in
+sections 6 and 7 of the [Mozilla Public License 2.0](../LICENSE).
 
 If a pairing secret may have leaked:
 

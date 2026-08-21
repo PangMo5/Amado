@@ -44,6 +44,12 @@ struct AppFeature {
     var pairingSecretBase64 = ""
     var isListening = false
     var launchAtLogin = false
+    var closedLidStatus = ClosedLidControlStatus.inactive
+    var isApplyingClosedLidMode = false
+    /// Last closed-lid policy whose power state was submitted to the helper.
+    /// This deduplicates the config publisher after an in-app edit while still
+    /// applying edits made directly to config.toml.
+    var appliedClosedLidMode = ClosedLidMode.off
     /// Everything currently wrong with the agent, worst first. Empty is the
     /// healthy state; entries are cleared by whichever subsystem recovers.
     var issues = [AgentIssue]()
@@ -73,22 +79,53 @@ struct AppFeature {
       config.proximityPauseUntil.map(Date.init(timeIntervalSince1970:))
     }
 
+    var activeAutoLockPause: AutoLockPause? {
+      guard
+        config.proximityAutoLock,
+        !config.proximityDeviceID.isEmpty
+      else { return nil }
+      if config.closedLidMode == .unlocked, config.caffeinatePausesAutoLock {
+        return .whileCaffeinating
+      }
+      return proximityPauseUntil.map(AutoLockPause.until)
+    }
+
+    /// The menu bar icon is compositional: the large lock, closed-lid marker,
+    /// pause clock, and attention marker are derived independently.
+    var menuBarIndicator: MenuBarIndicatorState {
+      MenuBarIndicatorState(
+        isAutoLockEnabled: config.proximityAutoLock,
+        closedLidPolicy: closedLidStatus == .active
+          ? config.closedLidMode.awakePolicy
+          : nil,
+        isAutoLockPaused: activeAutoLockPause != nil,
+        needsAttention: !issues.isEmpty,
+      )
+    }
+
     var pairedClients: [PairedClient] {
       pairedClientRegistry.clients
     }
 
-    /// What the menu bar should say. A problem outranks the pause badge, which
-    /// outranks plain listening, because the icon can only carry one idea.
+    /// What the menu bar should say. A problem still outranks healthy state,
+    /// while active closed-lid mode preserves both its lock policy and an
+    /// independent proximity-pause badge.
     var health: AgentHealth {
       if let issue = issues.first {
         return .impaired(issue)
       }
+      let autoLockPause = activeAutoLockPause
       if
-        config.proximityAutoLock,
-        !config.proximityDeviceID.isEmpty,
-        let deadline = proximityPauseUntil
+        closedLidStatus == .active,
+        let policy = config.closedLidMode.awakePolicy
       {
-        return .paused(until: deadline)
+        return .closedLidAwake(
+          policy: policy,
+          autoLockPause: autoLockPause,
+        )
+      }
+      if let autoLockPause {
+        return .paused(autoLockPause)
       }
       return isListening ? .listening : .starting
     }
@@ -125,6 +162,23 @@ struct AppFeature {
     case responseEncodingFailed(origin: String)
     case loginItemChanged(failure: String?)
     case issueRecoveryTapped(AgentIssue.Kind)
+    case closedLidModeChanged(ClosedLidMode)
+    case caffeinateSafetyConfirmationFinished(mode: ClosedLidMode, confirmed: Bool)
+    case caffeinateAutoLockPauseChoiceSelected(CaffeinateAutoLockPauseChoice)
+    case closedLidRetryTapped
+    case closedLidApplyResponse(
+      requestedMode: ClosedLidMode,
+      previousMode: ClosedLidMode,
+      status: ClosedLidControlStatus,
+      userInitiated: Bool,
+    )
+    case closedLidStatusChanged(ClosedLidControlStatus)
+    case lidStateChanged(isClosed: Bool)
+    case builtinDisplayDimmingFinished(
+      isDimmed: Bool,
+      result: BuiltinDisplayDimmingResult,
+    )
+    case displaySleepFinished(DisplaySleepResult)
     case received(IncomingLockRequest)
     case lockConfirmationFinished(origin: String, confirmed: Bool)
     case lockNowTapped
@@ -151,20 +205,22 @@ struct AppFeature {
     case proximityScanToggled(Bool)
     case proximityDevicesUpdated([DiscoveredDevice])
     case proximityStatusChanged(ProximityStatus)
-    case proximityConfigChanged(AmadoConfig)
+    case configChanged(AmadoConfig)
     case proximityFarDetected(ProximityDecisionEngine.LockReason)
   }
 
-  @Dependency(\.lockListener) var lockListener
-  @Dependency(\.remoteListener) var remoteListener
-  @Dependency(\.notifier) var notifier
-  @Dependency(\.proximityLock) var proximityLock
-  @Dependency(\.loginItem) var loginItem
-  @Dependency(\.secretStore) var secretStore
-  @Dependency(\.screenLocker) var screenLocker
-  @Dependency(\.updater) var updater
+  @Dependency(\.caffeinatePrompt) var caffeinatePrompt
+  @Dependency(\.closedLidControl) var closedLidControl
   @Dependency(\.continuousClock) var clock
   @Dependency(\.date) var date
+  @Dependency(\.lockListener) var lockListener
+  @Dependency(\.loginItem) var loginItem
+  @Dependency(\.notifier) var notifier
+  @Dependency(\.proximityLock) var proximityLock
+  @Dependency(\.remoteListener) var remoteListener
+  @Dependency(\.screenLocker) var screenLocker
+  @Dependency(\.secretStore) var secretStore
+  @Dependency(\.updater) var updater
   @Dependency(\.uuid) var uuid
 
   var body: some ReducerOf<Self> {
@@ -209,6 +265,7 @@ struct AppFeature {
           state.$config.withLock { $0.proximityPauseUntil = nil }
         }
         let cfg = state.config
+        state.appliedClosedLidMode = cfg.closedLidMode
         state.appliedProximityKey = proximityKey(cfg)
         let sharedConfig = state.$config
         let proximityConfiguration = proximityMonitorConfiguration(cfg)
@@ -241,6 +298,16 @@ struct AppFeature {
             }
           },
           .run { send in
+            for await isClosed in closedLidControl.lidChanges() {
+              await send(.lidStateChanged(isClosed: isClosed))
+            }
+          },
+          .run { send in
+            for await status in closedLidControl.statusChanges() {
+              await send(.closedLidStatusChanged(status))
+            }
+          },
+          .run { send in
             proximityLock.monitor(proximityConfiguration)
             for await reason in proximityLock.farEvents() {
               await send(.proximityFarDetected(reason))
@@ -254,9 +321,10 @@ struct AppFeature {
           .run { send in
             // Re-issue monitor() when proximity config changes — from the
             // Settings UI or an external edit to config.toml (Sharing's file
-            // watcher). Dedup lives in `.proximityConfigChanged`.
+            // watcher). Power and proximity changes are deduplicated in
+            // `.configChanged`.
             for await newConfig in sharedConfig.publisher.values {
-              await send(.proximityConfigChanged(newConfig))
+              await send(.configChanged(newConfig))
             }
           },
           .run { send in
@@ -269,6 +337,16 @@ struct AppFeature {
           },
           proximityPauseTimer(for: cfg),
         ])
+        if cfg.closedLidMode.keepsAwake {
+          state.isApplyingClosedLidMode = true
+          startupEffects.append(
+            applyClosedLidMode(
+              cfg.closedLidMode,
+              previousMode: .off,
+              userInitiated: false,
+            )
+          )
+        }
         return .merge(startupEffects)
 
       case .lanListenerStateChanged(let listenerState):
@@ -322,13 +400,219 @@ struct AppFeature {
         case .remoteListener:
           return .run { _ in await remoteListener.retry() }
 
+        case .closedLidPower:
+          guard
+            let recovery = state.issues.first(where: { $0.kind == kind })?.recovery
+          else { return .none }
+          switch recovery {
+          case .openLoginItems:
+            return .run { _ in await closedLidControl.openHelperSettings() }
+
+          case .retry:
+            guard state.config.closedLidMode.keepsAwake else { return .none }
+            state.isApplyingClosedLidMode = true
+            return applyClosedLidMode(
+              state.config.closedLidMode,
+              previousMode: state.config.closedLidMode,
+              userInitiated: true,
+            )
+
+          case .openSettings:
+            return .none
+          }
+
         case .bluetooth,
+             .closedLidDisplay,
              .config,
              .loginItem,
              .pairingSecret,
              .screenLock:
           return .none
         }
+
+      case .closedLidModeChanged(let mode):
+        guard mode != state.config.closedLidMode else { return .none }
+        if mode.keepsAwake, !state.config.closedLidMode.keepsAwake {
+          return .run { send in
+            await send(
+              .caffeinateSafetyConfirmationFinished(
+                mode: mode,
+                confirmed: await caffeinatePrompt.confirmSafety(),
+              )
+            )
+          }
+        }
+        return requestClosedLidModeTransition(mode, in: &state)
+
+      case .caffeinateSafetyConfirmationFinished(let mode, let confirmed):
+        guard confirmed, mode.keepsAwake else { return .none }
+        return requestClosedLidModeTransition(mode, in: &state)
+
+      case .caffeinateAutoLockPauseChoiceSelected(.pause):
+        return transitionClosedLidMode(
+          .unlocked,
+          caffeinatePausesAutoLock: true,
+          in: &state,
+        )
+
+      case .caffeinateAutoLockPauseChoiceSelected(.keepAutoLockOn):
+        return transitionClosedLidMode(
+          .unlocked,
+          caffeinatePausesAutoLock: false,
+          in: &state,
+        )
+
+      case .caffeinateAutoLockPauseChoiceSelected(.cancel):
+        return .none
+
+      case .closedLidRetryTapped:
+        guard state.config.closedLidMode.keepsAwake else { return .none }
+        state.isApplyingClosedLidMode = true
+        return applyClosedLidMode(
+          state.config.closedLidMode,
+          previousMode: state.config.closedLidMode,
+          userInitiated: true,
+        )
+
+      case .closedLidApplyResponse(let requestedMode, let previousMode, let status, let userInitiated):
+        state.isApplyingClosedLidMode = false
+        state.closedLidStatus = status
+        switch status {
+        case .active,
+             .inactive:
+          return resolve(.closedLidPower, in: &state)
+
+        case .requiresApproval:
+          let issue = raise(
+            .closedLidPower,
+            detail: status.summary,
+            recovery: .openLoginItems,
+            interrupts: !userInitiated,
+            in: &state,
+          )
+          guard userInitiated else { return issue }
+          return .merge(
+            issue,
+            .run { _ in await closedLidControl.openHelperSettings() },
+          )
+
+        case .unsupported:
+          state.$config.withLock { $0.closedLidMode = .off }
+          state.appliedClosedLidMode = .off
+          return raise(
+            .closedLidPower,
+            detail: status.summary,
+            interrupts: false,
+            in: &state,
+          )
+
+        case .failed:
+          // A failed Off may mean the privileged global override is still on.
+          // Restore the previous awake policy so the UI never claims normal
+          // sleep was restored, and make the repair action explicit.
+          if !requestedMode.keepsAwake {
+            state.$config.withLock {
+              $0.closedLidMode = previousMode.keepsAwake ? previousMode : .lock
+            }
+            state.appliedClosedLidMode = state.config.closedLidMode
+          }
+          return raise(
+            .closedLidPower,
+            detail: status.summary,
+            recovery: .retry,
+            in: &state,
+          )
+        }
+
+      case .closedLidStatusChanged(let status):
+        state.closedLidStatus = status
+        switch status {
+        case .active:
+          return resolve(.closedLidPower, in: &state)
+
+        case .inactive:
+          guard state.config.closedLidMode.keepsAwake else {
+            return resolve(.closedLidPower, in: &state)
+          }
+          return raise(
+            .closedLidPower,
+            detail: "The Power Helper restored normal lid sleep unexpectedly",
+            recovery: .retry,
+            in: &state,
+          )
+
+        case .requiresApproval:
+          return raise(
+            .closedLidPower,
+            detail: status.summary,
+            recovery: .openLoginItems,
+            in: &state,
+          )
+
+        case .unsupported:
+          state.$config.withLock { $0.closedLidMode = .off }
+          state.appliedClosedLidMode = .off
+          return raise(
+            .closedLidPower,
+            detail: status.summary,
+            interrupts: false,
+            in: &state,
+          )
+
+        case .failed:
+          return raise(
+            .closedLidPower,
+            detail: status.summary,
+            recovery: .retry,
+            in: &state,
+          )
+        }
+
+      case .lidStateChanged(let isClosed):
+        if !isClosed {
+          return .run { send in
+            let result = await closedLidControl.setBuiltinDisplayDimmed(false)
+            await send(.builtinDisplayDimmingFinished(isDimmed: false, result: result))
+          }
+        }
+        guard
+          state.config.closedLidMode.keepsAwake,
+          state.closedLidStatus == .active
+        else { return .none }
+        if state.config.closedLidMode == .lock {
+          state.record(
+            "Locked — MacBook lid closed",
+            kind: .locked,
+            id: uuid(),
+            at: date.now,
+          )
+          return .run { send in
+            await send(.screenLockAttempted(succeeded: screenLocker.lock()))
+            await send(.displaySleepFinished(await closedLidControl.sleepDisplays()))
+          }
+        }
+        return .run { send in
+          let result = await closedLidControl.setBuiltinDisplayDimmed(true)
+          await send(.builtinDisplayDimmingFinished(isDimmed: true, result: result))
+        }
+
+      case .builtinDisplayDimmingFinished(_, .applied):
+        return resolve(.closedLidDisplay, in: &state)
+
+      case .builtinDisplayDimmingFinished(let isDimmed, .failed(let detail)):
+        return raise(
+          .closedLidDisplay,
+          detail: isDimmed
+            ? detail
+            : "The lid opened, but the previous brightness was not restored: \(detail)",
+          in: &state,
+        )
+
+      case .displaySleepFinished(.applied):
+        return resolve(.closedLidDisplay, in: &state)
+
+      case .displaySleepFinished(.failed(let detail)):
+        return raise(.closedLidDisplay, detail: detail, in: &state)
 
       case .received(let request):
         guard let secret = state.pairingSecret else {
@@ -560,7 +844,7 @@ struct AppFeature {
         guard
           state.config.proximityAutoLock,
           !state.config.proximityDeviceID.isEmpty,
-          state.config.activeProximityPauseUntil(at: date.now) == nil
+          state.config.activeAutoLockPause(at: date.now) == nil
         else {
           return .none
         }
@@ -599,6 +883,7 @@ struct AppFeature {
         state.$config.withLock {
           $0.proximityAutoLock = on
           if !on {
+            $0.caffeinatePausesAutoLock = false
             $0.proximityPauseUntil = nil
           }
         }
@@ -619,7 +904,10 @@ struct AppFeature {
         return .none
 
       case .proximityPauseResumeTapped:
-        state.$config.withLock { $0.proximityPauseUntil = nil }
+        state.$config.withLock {
+          $0.caffeinatePausesAutoLock = false
+          $0.proximityPauseUntil = nil
+        }
         return .none
 
       case .proximityPauseExpired(let expectedDeadline):
@@ -664,17 +952,41 @@ struct AppFeature {
         state.$config.withLock { $0.proximitySmoothing = samples }
         return .none
 
-      case .proximityConfigChanged(let newConfig):
+      case .configChanged(let newConfig):
+        var effects = [Effect<Action>]()
+
+        let previousClosedLidMode = state.appliedClosedLidMode
+        let newClosedLidMode = newConfig.closedLidMode
+        if newClosedLidMode != previousClosedLidMode {
+          state.appliedClosedLidMode = newClosedLidMode
+          if
+            !previousClosedLidMode.keepsAwake
+            || !newClosedLidMode.keepsAwake
+            || state.closedLidStatus != .active
+          {
+            state.isApplyingClosedLidMode = true
+            effects.append(
+              applyClosedLidMode(
+                newClosedLidMode,
+                previousMode: previousClosedLidMode,
+                userInitiated: false,
+              )
+            )
+          }
+        }
+
         let key = proximityKey(newConfig)
-        guard key != state.appliedProximityKey else { return .none }
-        state.appliedProximityKey = key
-        let configuration = proximityMonitorConfiguration(newConfig)
-        return .merge(
-          .run { _ in
-            proximityLock.monitor(configuration)
-          },
-          proximityPauseTimer(for: newConfig),
-        )
+        if key != state.appliedProximityKey {
+          state.appliedProximityKey = key
+          let configuration = proximityMonitorConfiguration(newConfig)
+          effects.append(
+            .run { _ in
+              proximityLock.monitor(configuration)
+            }
+          )
+          effects.append(proximityPauseTimer(for: newConfig))
+        }
+        return .merge(effects)
 
       case .proximityScanToggled(let on):
         // discovered() is subscribed once in `.task`; here we only start/stop the
@@ -692,6 +1004,7 @@ struct AppFeature {
   // MARK: Private
 
   private enum CancelID {
+    case closedLidApply
     case proximityPauseTimer
   }
 
@@ -737,6 +1050,74 @@ struct AppFeature {
     return resolve(.pairingSecret, in: &state)
   }
 
+  private func transitionClosedLidMode(
+    _ mode: ClosedLidMode,
+    caffeinatePausesAutoLock: Bool? = nil,
+    in state: inout State,
+  ) -> Effect<Action> {
+    let previousMode = state.config.closedLidMode
+    guard mode != previousMode else { return .none }
+    state.$config.withLock {
+      $0.closedLidMode = mode
+      if let caffeinatePausesAutoLock {
+        $0.caffeinatePausesAutoLock = caffeinatePausesAutoLock
+      }
+    }
+    state.appliedClosedLidMode = mode
+
+    // Switching between the two awake policies changes only what happens on
+    // the next lid-close transition; the existing helper lease remains valid.
+    if
+      previousMode.keepsAwake,
+      mode.keepsAwake,
+      state.closedLidStatus == .active
+    {
+      return .none
+    }
+    state.isApplyingClosedLidMode = true
+    return applyClosedLidMode(
+      mode,
+      previousMode: previousMode,
+      userInitiated: true,
+    )
+  }
+
+  private func requestClosedLidModeTransition(
+    _ mode: ClosedLidMode,
+    in state: inout State,
+  ) -> Effect<Action> {
+    guard mode != state.config.closedLidMode else { return .none }
+    if mode == .unlocked, state.config.proximityAutoLock {
+      return .run { send in
+        await send(
+          .caffeinateAutoLockPauseChoiceSelected(
+            await caffeinatePrompt.askAutoLockPause()
+          )
+        )
+      }
+    }
+    return transitionClosedLidMode(mode, in: &state)
+  }
+
+  private func applyClosedLidMode(
+    _ mode: ClosedLidMode,
+    previousMode: ClosedLidMode,
+    userInitiated: Bool,
+  ) -> Effect<Action> {
+    .run { send in
+      let status = await closedLidControl.setEnabled(mode.keepsAwake, userInitiated)
+      await send(
+        .closedLidApplyResponse(
+          requestedMode: mode,
+          previousMode: previousMode,
+          status: status,
+          userInitiated: userInitiated,
+        )
+      )
+    }
+    .cancellable(id: CancelID.closedLidApply, cancelInFlight: true)
+  }
+
   private func bluetoothRecovery(for reason: BluetoothUnavailability) -> AgentIssueRecovery? {
     switch reason {
     case .poweredOff:
@@ -758,6 +1139,7 @@ struct AppFeature {
     let pauseUntil = config.proximityPauseUntil.map { String($0) } ?? ""
     return """
       \(config.proximityAutoLock)|\(pauseUntil)|\
+      \(config.closedLidMode.rawValue)|\(config.caffeinatePausesAutoLock)|\
       \(config.proximityDeviceID)|\(config.proximityMode.rawValue)|\
       \(config.proximitySensitivity.rawValue)|\(config.proximityFarRSSI)|\
       \(config.proximityGraceSeconds)|\(config.proximitySmoothing)
@@ -765,7 +1147,7 @@ struct AppFeature {
   }
 
   private func proximityMonitorConfiguration(_ config: AmadoConfig) -> ProximityMonitorConfiguration {
-    let isPaused = config.activeProximityPauseUntil(at: date.now) != nil
+    let isPaused = config.activeAutoLockPause(at: date.now) != nil
     return ProximityMonitorConfiguration(
       deviceID: config.proximityAutoLock && !isPaused ? UUID(uuidString: config.proximityDeviceID) : nil,
       mode: config.proximityMode,

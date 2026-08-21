@@ -6,6 +6,9 @@ paired-Mac data. This powers Amado's one-tap path and its verified result.
 Walk-away auto-lock is configured separately on the Mac, and neither path can
 unlock the Mac.
 
+Caffeinate is also configured locally on the Mac. It does not add an unlock or
+power-management command to the pairing protocol.
+
 ## Pair an iPhone
 
 1. Open **Amado › Settings › Pairing** on the Mac.

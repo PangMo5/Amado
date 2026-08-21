@@ -25,6 +25,7 @@ struct AmadoConfigTests {
     let expected = AmadoConfig(
       macID: UUID().uuidString,
       proximityAutoLock: true,
+      caffeinatePausesAutoLock: true,
       proximityPauseUntil: 2_000,
       proximityDeviceID: UUID().uuidString,
     )
@@ -47,6 +48,49 @@ struct AmadoConfigTests {
     )
 
     #expect(decoded.proximityPauseUntil == nil)
+    #expect(decoded.caffeinatePausesAutoLock == false)
     #expect(decoded.macID.isEmpty)
+    #expect(decoded.closedLidMode == .off)
+  }
+
+  @Test(arguments: ClosedLidMode.allCases)
+  func `Closed lid mode round trips through TOML`(_ mode: ClosedLidMode) throws {
+    let expected = AmadoConfig(closedLidMode: mode)
+
+    let encoded = try TOMLEncoder().encode(expected)
+    let encodedText = String(decoding: encoded, as: UTF8.self)
+    let decoded = try TOMLDecoder().decode(AmadoConfig.self, from: encoded)
+
+    #expect(encodedText.contains("caffeinate_mode"))
+    #expect(!encodedText.contains("closed_lid_mode"))
+    #expect(decoded == expected)
+  }
+
+  @Test
+  func `Unreleased closed lid config key is not accepted as Caffeinate mode`() throws {
+    let decoded = try TOMLDecoder().decode(
+      AmadoConfig.self,
+      from: "closed_lid_mode = \"unlocked\"",
+    )
+
+    #expect(decoded.closedLidMode == .off)
+  }
+
+  @Test
+  func `Caffeinate auto-lock pause follows only the unlocked policy`() {
+    let now = Date(timeIntervalSince1970: 1_000)
+
+    #expect(
+      AmadoConfig(
+        closedLidMode: .unlocked,
+        caffeinatePausesAutoLock: true,
+      ).activeAutoLockPause(at: now) == .whileCaffeinating
+    )
+    #expect(
+      AmadoConfig(
+        closedLidMode: .lock,
+        caffeinatePausesAutoLock: true,
+      ).activeAutoLockPause(at: now) == nil
+    )
   }
 }

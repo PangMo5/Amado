@@ -92,11 +92,22 @@ struct SettingsView: View {
 
   private var statusLine: String {
     switch store.health {
-    case .impaired(let issue): issue.title
-    case .paused(let deadline):
-      "Auto-lock paused until \(deadline.formatted(date: .abbreviated, time: .shortened))"
-    case .listening: "Listening"
-    case .starting: "Starting…"
+    case .impaired(let issue):
+      return issue.title
+
+    case .paused(let pause):
+      return autoLockPauseDescription(pause)
+
+    case .closedLidAwake(let policy, let autoLockPause):
+      let prefix = "Caffeinate active; \(policy.statusDescription)"
+      guard let autoLockPause else { return prefix }
+      return "\(prefix); \(autoLockPauseDescription(autoLockPause).lowercased())"
+
+    case .listening:
+      return "Listening"
+
+    case .starting:
+      return "Starting…"
     }
   }
 
@@ -117,6 +128,7 @@ struct SettingsView: View {
         )
         LabeledContent("Status", value: statusLine)
       }
+      CaffeinateSettingsSection(store: store)
       Section {
         Button("Lock this Mac now") { store.send(.lockNowTapped) }
       } footer: {
@@ -249,6 +261,79 @@ struct SettingsView: View {
     NSPasteboard.general.setString(string, forType: .string)
   }
 
+  private func autoLockPauseDescription(_ pause: AutoLockPause) -> String {
+    switch pause {
+    case .until(let deadline):
+      "Auto-lock paused until \(deadline.formatted(date: .abbreviated, time: .shortened))"
+    case .whileCaffeinating:
+      "Auto-lock paused while Caffeinate keeps the Mac unlocked"
+    }
+  }
+
+}
+
+// MARK: - CaffeinateSettingsSection
+
+private struct CaffeinateSettingsSection: View {
+
+  let store: StoreOf<AppFeature>
+
+  var body: some View {
+    Section {
+      Picker(
+        "When the lid closes",
+        selection: Binding(
+          get: { store.config.closedLidMode },
+          set: { store.send(.closedLidModeChanged($0)) },
+        ),
+      ) {
+        ForEach(ClosedLidMode.allCases, id: \.self) { mode in
+          Text(mode.title).tag(mode)
+        }
+      }
+
+      if store.config.closedLidMode.keepsAwake {
+        Label(
+          "Caffeinate disables normal lid-close sleep. Use this Mac only on a hard, stable, "
+            + "well-ventilated surface—never in a bag, bedding, or enclosed space. You are "
+            + "responsible for monitoring heat and battery.",
+          systemSymbol: .exclamationmarkTriangleFill,
+        )
+        .foregroundStyle(.orange)
+        .fixedSize(horizontal: false, vertical: true)
+        .accessibilityElement(children: .combine)
+      }
+
+      if store.config.closedLidMode == .unlocked {
+        Label(
+          "The login session remains unlocked while the Mac is closed.",
+          systemSymbol: .exclamationmarkTriangleFill,
+        )
+        .foregroundStyle(.orange)
+      }
+
+      if store.config.closedLidMode.keepsAwake {
+        LabeledContent(
+          "Caffeinate status",
+          value: store.isApplyingClosedLidMode ? "Starting…" : store.closedLidStatus.summary,
+        )
+        if !store.isApplyingClosedLidMode, store.closedLidStatus != .active {
+          Button("Try Again") { store.send(.closedLidRetryTapped) }
+        }
+      }
+    } header: {
+      Text("Caffeinate")
+    } footer: {
+      Text(
+        "Amado uses a narrowly scoped Power Helper to keep macOS running after the MacBook lid closes. "
+          + "macOS asks an administrator to approve it once in Login Items & Extensions. The helper "
+          + "restores normal sleep if Amado disconnects. Both awake policies turn off the built-in "
+          + "display: the lock policy uses display sleep, while the unlocked policy turns off only "
+          + "the built-in backlight and restores its previous brightness when the lid opens."
+      )
+    }
+  }
+
 }
 
 // MARK: - AgentIssuesSection
@@ -304,6 +389,9 @@ private struct IssueRecoveryButton: View {
 
     case .openSettings(let url):
       Button("Open Settings") { openURL(url) }
+
+    case .openLoginItems:
+      Button("Open Settings", action: onRetry)
 
     case nil:
       EmptyView()
@@ -519,7 +607,7 @@ private struct ProximitySettingsPane: View {
           .disabled(
             !store.config.proximityAutoLock
               || store.config.proximityDeviceID.isEmpty
-              || store.proximityPauseUntil != nil
+              || store.activeAutoLockPause != nil
           )
         } else {
           manualControls
@@ -597,8 +685,13 @@ private struct ProximitySettingsPane: View {
     if store.config.proximityAutoLock, store.config.proximityDeviceID.isEmpty {
       return "Pick your iPhone below"
     }
-    if let deadline = store.proximityPauseUntil {
-      return "Paused until \(deadline.formatted(date: .abbreviated, time: .shortened))"
+    if let pause = store.activeAutoLockPause {
+      switch pause {
+      case .until(let deadline):
+        return "Paused until \(deadline.formatted(date: .abbreviated, time: .shortened))"
+      case .whileCaffeinating:
+        return "Paused while Caffeinate keeps the Mac unlocked"
+      }
     }
     return statusText(store.proximityStatus)
   }
@@ -643,11 +736,17 @@ private struct ProximityPauseSection: View {
 
   var body: some View {
     Section {
-      if let deadline = store.proximityPauseUntil {
-        LabeledContent(
-          "Paused until",
-          value: deadline.formatted(date: .abbreviated, time: .shortened),
-        )
+      if let pause = store.activeAutoLockPause {
+        switch pause {
+        case .until(let deadline):
+          LabeledContent(
+            "Paused until",
+            value: deadline.formatted(date: .abbreviated, time: .shortened),
+          )
+
+        case .whileCaffeinating:
+          LabeledContent("Paused", value: "While Caffeinate keeps the Mac unlocked")
+        }
         Button("Resume Auto-lock") {
           store.send(.proximityPauseResumeTapped)
         }

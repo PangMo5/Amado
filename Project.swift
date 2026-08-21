@@ -6,7 +6,7 @@ let bundleIdPrefix = "dev.PangMo5"
 // (TUIST_DEVELOPMENT_TEAM, …); in CI they come from repository secrets.
 let developmentTeam = Environment.developmentTeam.getString(default: "")
 let sparklePublicEDKey = Environment.sparklePublicEdKey.getString(default: "")
-let macOSVersion = "1.0.3"
+let macOSVersion = "2.0.0"
 let iOSVersion = "1.0.0"
 // Release workflows inject the build number. Local builds use 1.
 let buildNumber = Environment.buildNumber.getString(default: "1")
@@ -90,11 +90,23 @@ let project = Project(
         "SUEnableAutomaticChecks": true,
         "SUPublicEDKey": "$(SPARKLE_PUBLIC_ED_KEY)",
       ]),
-      sources: ["Amado/Sources/**"],
+      sources: ["Amado/Sources/**", "AmadoPowerHelper/Shared/**"],
       resources: ["Amado/Resources/**"],
+      copyFiles: [
+        .executables(
+          name: "Embed Power Helper",
+          files: [.buildProduct(name: "AmadoPowerHelper")],
+        ),
+        .wrapper(
+          name: "Embed Power Helper LaunchDaemon",
+          subpath: "Contents/Library/LaunchDaemons",
+          files: ["AmadoPowerHelper/Resources/dev.PangMo5.Amado.PowerHelper.plist"],
+        ),
+      ],
       entitlements: .file(path: "Amado/Amado.entitlements"),
       dependencies: [
         .target(name: "AmadoKit"),
+        .target(name: "AmadoPowerHelper"),
         .external(name: "ComposableArchitecture"),
         .external(name: "Sharing"),
         .external(name: "Sparkle"),
@@ -122,6 +134,24 @@ let project = Project(
           .release(name: "Release"),
         ],
       ),
+    ),
+
+    // MARK: - AmadoPowerHelper (approved root LaunchDaemon)
+
+    .target(
+      name: "AmadoPowerHelper",
+      destinations: .macOS,
+      product: .commandLineTool,
+      bundleId: "\(bundleIdPrefix).Amado.PowerHelper",
+      deploymentTargets: .macOS("15.0"),
+      infoPlist: .default,
+      sources: ["AmadoPowerHelper/Sources/**", "AmadoPowerHelper/Shared/**"],
+      settings: .settings(base: signingSettings.merging([
+        "PRODUCT_NAME": "AmadoPowerHelper",
+        "GENERATE_INFOPLIST_FILE": "YES",
+        "CREATE_INFOPLIST_SECTION_IN_BINARY": "YES",
+        "SKIP_INSTALL": "YES",
+      ]) { $1 }),
     ),
 
     // MARK: - AmadoiOS (iPhone client)

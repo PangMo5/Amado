@@ -1,6 +1,59 @@
 import AmadoKit
 import Foundation
 
+// MARK: - ClosedLidMode
+
+/// What closing the built-in display should do. A single mode avoids invalid
+/// combinations such as "closed-lid mode off, but lock preference off."
+enum ClosedLidMode: String, CaseIterable, Equatable, Sendable, Codable {
+  case off
+  case lock
+  case unlocked
+
+  // MARK: Internal
+
+  enum AwakePolicy: Equatable, Hashable, Sendable {
+    case lockOnClose
+    case keepUnlocked
+
+    var statusDescription: String {
+      switch self {
+      case .lockOnClose: "locks when the lid closes"
+      case .keepUnlocked: "stays unlocked when the lid closes"
+      }
+    }
+  }
+
+  var awakePolicy: AwakePolicy? {
+    switch self {
+    case .off: nil
+    case .lock: .lockOnClose
+    case .unlocked: .keepUnlocked
+    }
+  }
+
+  var keepsAwake: Bool {
+    self != .off
+  }
+
+  var title: String {
+    switch self {
+    case .off: "Sleep normally"
+    case .lock: "Stay awake and lock"
+    case .unlocked: "Stay awake, keep unlocked"
+    }
+  }
+}
+
+// MARK: - AutoLockPause
+
+enum AutoLockPause: Equatable, Sendable {
+  case until(Date)
+  case whileCaffeinating
+}
+
+// MARK: - AmadoConfig
+
 /// Root of Amado's on-disk configuration, at `~/.config/amado/config.toml`
 /// (or `$XDG_CONFIG_HOME/amado/`). Non-sensitive, human-editable settings live
 /// here; the pairing secret is kept in the Keychain, not this file, since it's
@@ -13,7 +66,9 @@ struct AmadoConfig: Equatable, Sendable, Codable {
   init(
     macID: String = "",
     remoteHost: String = "",
+    closedLidMode: ClosedLidMode = .off,
     proximityAutoLock: Bool = false,
+    caffeinatePausesAutoLock: Bool = false,
     proximityPauseUntil: Double? = nil,
     proximityDeviceID: String = "",
     proximityDeviceName: String = "",
@@ -25,7 +80,9 @@ struct AmadoConfig: Equatable, Sendable, Codable {
   ) {
     self.macID = macID
     self.remoteHost = remoteHost
+    self.closedLidMode = closedLidMode
     self.proximityAutoLock = proximityAutoLock
+    self.caffeinatePausesAutoLock = caffeinatePausesAutoLock
     self.proximityPauseUntil = proximityPauseUntil
     self.proximityDeviceID = proximityDeviceID
     self.proximityDeviceName = proximityDeviceName
@@ -47,8 +104,14 @@ struct AmadoConfig: Equatable, Sendable, Codable {
     remoteHost = container.contains(.remoteHost)
       ? try container.decode(String.self, forKey: .remoteHost)
       : ""
+    closedLidMode = container.contains(.closedLidMode)
+      ? try container.decode(ClosedLidMode.self, forKey: .closedLidMode)
+      : .off
     proximityAutoLock = container.contains(.proximityAutoLock)
       ? try container.decode(Bool.self, forKey: .proximityAutoLock)
+      : false
+    caffeinatePausesAutoLock = container.contains(.caffeinatePausesAutoLock)
+      ? try container.decode(Bool.self, forKey: .caffeinatePausesAutoLock)
       : false
     proximityPauseUntil = container.contains(.proximityPauseUntil)
       ? try container.decode(Double.self, forKey: .proximityPauseUntil)
@@ -83,9 +146,15 @@ struct AmadoConfig: Equatable, Sendable, Codable {
   /// Public host of the tunnel the user runs for remote lock (e.g.
   /// `amado.example.com`); empty means LAN-only.
   var remoteHost: String
+  /// Off, keep awake and lock, or keep awake while leaving the login session
+  /// unlocked. The user-approved Power Helper applies the privileged modes.
+  var closedLidMode: ClosedLidMode
   /// Lock this Mac when the selected nearby device (the owner's iPhone) walks
   /// out of Bluetooth range.
   var proximityAutoLock: Bool
+  /// Suspend proximity locking whenever Caffeinate is configured to keep the
+  /// login session unlocked. The pause ends with that Caffeinate policy.
+  var caffeinatePausesAutoLock: Bool
   /// Unix timestamp through which proximity monitoring is suspended. Nil means
   /// auto-lock is not paused. Keeping the deadline on disk lets a pause survive
   /// app restarts without turning the underlying auto-lock preference off.
@@ -114,12 +183,21 @@ struct AmadoConfig: Equatable, Sendable, Codable {
     return deadline > now ? deadline : nil
   }
 
+  func activeAutoLockPause(at now: Date) -> AutoLockPause? {
+    if closedLidMode == .unlocked, caffeinatePausesAutoLock {
+      return .whileCaffeinating
+    }
+    return activeProximityPauseUntil(at: now).map(AutoLockPause.until)
+  }
+
   // MARK: Private
 
   private enum CodingKeys: String, CodingKey {
     case macID = "mac_id"
     case remoteHost = "remote_host"
+    case closedLidMode = "caffeinate_mode"
     case proximityAutoLock = "proximity_auto_lock"
+    case caffeinatePausesAutoLock = "caffeinate_pauses_auto_lock"
     case proximityPauseUntil = "proximity_pause_until"
     case proximityDeviceID = "proximity_device_id"
     case proximityDeviceName = "proximity_device_name"

@@ -8,6 +8,11 @@ cannot be reached locally.
 This extends Amado's one-tap controls beyond the LAN. Walk-away auto-lock is a
 separate, equally central path that runs locally on the Mac.
 
+Caffeinate can keep the Mac agent and user workloads running after a MacBook
+lid closes, but its policy can be changed only on that Mac. Remote clients
+retain the same narrow lock-and-status capability and cannot enable a sleep
+override or unlock the session. See [Caffeinate](CAFFEINATE.md).
+
 Lock and status requests use authenticated responses. A lock request waits
 briefly for macOS to report the locked session before returning `locked`; if
 that transition cannot be observed in time, the client reports that the

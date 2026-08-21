@@ -8,6 +8,9 @@ enum AgentIssueRecovery: Equatable, Sendable {
   case retry
   /// Send the user to the System Settings pane that owns the problem.
   case openSettings(URL)
+  /// Open Login Items & Extensions, where macOS approves the bundled root
+  /// helper used by closed-lid mode.
+  case openLoginItems
 
   // MARK: Internal
 
@@ -15,6 +18,7 @@ enum AgentIssueRecovery: Equatable, Sendable {
     switch self {
     case .retry: "Try Again"
     case .openSettings: "Open Settings"
+    case .openLoginItems: "Open Settings"
     }
   }
 }
@@ -52,6 +56,12 @@ struct AgentIssue: Equatable, Sendable, Identifiable {
     case pairingSecret
     /// Bluetooth is off or not permitted, so proximity auto-lock is idle.
     case bluetooth
+    /// The user-approved root helper is not active, so the configured
+    /// closed-lid sleep override cannot be applied.
+    case closedLidPower
+    /// The built-in display backlight could not be changed without requesting
+    /// system display sleep and violating the selected lock policy.
+    case closedLidDisplay
     /// The tunnel-facing HTTP server stopped; the LAN path still works.
     case remoteListener
     /// Launch at login could not be registered or unregistered.
@@ -68,10 +78,12 @@ struct AgentIssue: Equatable, Sendable, Identifiable {
       case .lanListener: 0
       case .screenLock: 1
       case .pairingSecret: 2
-      case .bluetooth: 3
-      case .remoteListener: 4
-      case .loginItem: 5
-      case .config: 6
+      case .closedLidPower: 3
+      case .closedLidDisplay: 4
+      case .bluetooth: 5
+      case .remoteListener: 6
+      case .loginItem: 7
+      case .config: 8
       }
     }
 
@@ -80,6 +92,8 @@ struct AgentIssue: Equatable, Sendable, Identifiable {
       case .lanListener: "Your devices can't reach this Mac"
       case .screenLock: "Amado can't lock this Mac"
       case .pairingSecret: "Pairing may not survive a restart"
+      case .closedLidPower: "Caffeinate isn't active"
+      case .closedLidDisplay: "Amado can't turn off the built-in display"
       case .bluetooth: "Auto-lock is waiting on Bluetooth"
       case .remoteListener: "Remote access is offline"
       case .loginItem: "Launch at login didn't change"
@@ -92,6 +106,8 @@ struct AgentIssue: Equatable, Sendable, Identifiable {
     var interrupts: Bool {
       switch self {
       case .bluetooth,
+           .closedLidDisplay,
+           .closedLidPower,
            .lanListener,
            .pairingSecret,
            .screenLock: true
@@ -108,6 +124,8 @@ struct AgentIssue: Equatable, Sendable, Identifiable {
       case .lanListener,
            .remoteListener: .retry
       case .bluetooth,
+           .closedLidDisplay,
+           .closedLidPower,
            .config,
            .loginItem,
            .pairingSecret,
@@ -142,8 +160,23 @@ struct AgentIssue: Equatable, Sendable, Identifiable {
 enum AgentHealth: Equatable, Sendable {
   case starting
   case listening
-  case paused(until: Date)
+  case closedLidAwake(
+    policy: ClosedLidMode.AwakePolicy,
+    autoLockPause: AutoLockPause?,
+  )
+  case paused(AutoLockPause)
   case impaired(AgentIssue)
+}
+
+// MARK: - MenuBarIndicatorState
+
+/// Independent visual facts rendered by the menu bar icon. Each property owns
+/// exactly one layer so one feature never changes another feature's symbol.
+struct MenuBarIndicatorState: Equatable, Hashable, Sendable {
+  let isAutoLockEnabled: Bool
+  let closedLidPolicy: ClosedLidMode.AwakePolicy?
+  let isAutoLockPaused: Bool
+  let needsAttention: Bool
 }
 
 // MARK: - SystemSettings
