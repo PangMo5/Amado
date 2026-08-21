@@ -44,6 +44,9 @@ struct AppFeature {
     var pairingSecretBase64 = ""
     var isListening = false
     var launchAtLogin = false
+    /// Everything currently wrong with the agent, worst first. Empty is the
+    /// healthy state; entries are cleared by whichever subsystem recovers.
+    var issues = [AgentIssue]()
     var activity = [ActivityEntry]()
     /// Bounded FIFO of nonces seen inside the freshness window, for replay
     /// dedup. Small because stale commands are already rejected by `LockCodec`.
@@ -74,6 +77,22 @@ struct AppFeature {
       pairedClientRegistry.clients
     }
 
+    /// What the menu bar should say. A problem outranks the pause badge, which
+    /// outranks plain listening, because the icon can only carry one idea.
+    var health: AgentHealth {
+      if let issue = issues.first {
+        return .impaired(issue)
+      }
+      if
+        config.proximityAutoLock,
+        !config.proximityDeviceID.isEmpty,
+        let deadline = proximityPauseUntil
+      {
+        return .paused(until: deadline)
+      }
+      return isListening ? .listening : .starting
+    }
+
     var macIdentity: PairedMacIdentity? {
       guard let id = UUID(uuidString: config.macID) else { return nil }
       return PairedMacIdentity(
@@ -100,7 +119,12 @@ struct AppFeature {
 
   enum Action {
     case task
-    case listenerStarted
+    case lanListenerStateChanged(LockListenerState)
+    case remoteListenerStateChanged(RemoteListenerState)
+    case screenLockAttempted(succeeded: Bool)
+    case responseEncodingFailed(origin: String)
+    case loginItemChanged(failure: String?)
+    case issueRecoveryTapped(AgentIssue.Kind)
     case received(IncomingLockRequest)
     case lockConfirmationFinished(origin: String, confirmed: Bool)
     case lockNowTapped
@@ -133,6 +157,7 @@ struct AppFeature {
 
   @Dependency(\.lockListener) var lockListener
   @Dependency(\.remoteListener) var remoteListener
+  @Dependency(\.notifier) var notifier
   @Dependency(\.proximityLock) var proximityLock
   @Dependency(\.loginItem) var loginItem
   @Dependency(\.secretStore) var secretStore
@@ -149,7 +174,13 @@ struct AppFeature {
         // Resolving the live updater starts Sparkle's automatic check schedule.
         updater.start()
         // Make sure ~/.config/amado/ exists before the first config write.
-        try? ConfigLocation.ensureDirectoryExists()
+        var startupEffects = [Effect<Action>]()
+        do {
+          try ConfigLocation.ensureDirectoryExists()
+          startupEffects.append(resolve(.config, in: &state))
+        } catch {
+          startupEffects.append(raise(.config, detail: error.localizedDescription, in: &state))
+        }
         if UUID(uuidString: state.config.macID) == nil {
           state.$config.withLock {
             $0.macID = uuid().uuidString
@@ -161,7 +192,7 @@ struct AppFeature {
         if state.pairingSecret == nil {
           let secret = PairingSecret.generate()
           state.pairingSecretBase64 = secret.base64
-          secretStore.save(secret.base64)
+          startupEffects.append(store(secret, in: &state))
         }
         // One-time migration of the tunnel host from the old UserDefaults key
         // into config.toml.
@@ -183,18 +214,30 @@ struct AppFeature {
         let proximityConfiguration = proximityMonitorConfiguration(cfg)
         // Listen on both transports; `.received` verifies + dedups by nonce, so
         // a command arriving via LAN *and* the tunnel locks at most once.
-        return .merge(
+        // Starting a listener is kept separate from consuming it: a listener
+        // that fails to bind retries in the background, and the request loop
+        // has to already be running when it finally comes up.
+        startupEffects.append(contentsOf: [
+          .run { _ in await lockListener.start() },
           .run { send in
-            try await lockListener.start()
-            await send(.listenerStarted)
             for await request in lockListener.incoming() {
               await send(.received(request))
             }
           },
           .run { send in
-            await remoteListener.start()
+            for await listenerState in lockListener.state() {
+              await send(.lanListenerStateChanged(listenerState))
+            }
+          },
+          .run { _ in await remoteListener.start() },
+          .run { send in
             for await request in remoteListener.incoming() {
               await send(.received(request))
+            }
+          },
+          .run { send in
+            for await listenerState in remoteListener.state() {
+              await send(.remoteListenerStateChanged(listenerState))
             }
           },
           .run { send in
@@ -225,11 +268,67 @@ struct AppFeature {
             }
           },
           proximityPauseTimer(for: cfg),
-        )
+        ])
+        return .merge(startupEffects)
 
-      case .listenerStarted:
-        state.isListening = true
+      case .lanListenerStateChanged(let listenerState):
+        switch listenerState {
+        case .ready:
+          state.isListening = true
+          return resolve(.lanListener, in: &state)
+
+        case .unavailable(let reason):
+          state.isListening = false
+          return raise(.lanListener, detail: reason, in: &state)
+        }
+
+      case .remoteListenerStateChanged(let listenerState):
+        switch listenerState {
+        case .running:
+          return resolve(.remoteListener, in: &state)
+
+        case .stopped(let reason):
+          return raise(.remoteListener, detail: reason, in: &state)
+        }
+
+      case .screenLockAttempted(let succeeded):
+        return succeeded
+          ? resolve(.screenLock, in: &state)
+          : raise(
+            .screenLock,
+            detail: "This version of macOS no longer exposes the lock entry point Amado uses.",
+            in: &state,
+          )
+
+      case .responseEncodingFailed(let origin):
+        state.record(
+          "Locked but could not answer \(origin)",
+          kind: .rejected,
+          id: uuid(),
+          at: date.now,
+        )
         return .none
+
+      case .loginItemChanged(let failure):
+        state.launchAtLogin = loginItem.isEnabled()
+        guard let failure else { return resolve(.loginItem, in: &state) }
+        return raise(.loginItem, detail: failure, in: &state)
+
+      case .issueRecoveryTapped(let kind):
+        switch kind {
+        case .lanListener:
+          return .run { _ in await lockListener.retry() }
+
+        case .remoteListener:
+          return .run { _ in await remoteListener.retry() }
+
+        case .bluetooth,
+             .config,
+             .loginItem,
+             .pairingSecret,
+             .screenLock:
+          return .none
+        }
 
       case .received(let request):
         guard let secret = state.pairingSecret else {
@@ -304,7 +403,7 @@ struct AppFeature {
               return .run { _ in request.respond(with: responseData) }
             }
             return .run { send in
-              screenLocker.lock()
+              await send(.screenLockAttempted(succeeded: screenLocker.lock()))
               var confirmed = screenLocker.isLocked()
               for _ in 0..<20 where !confirmed {
                 try? await clock.sleep(for: .milliseconds(100))
@@ -317,6 +416,9 @@ struct AppFeature {
                 mac: macIdentity,
               )
               guard let responseData = try? LockResponseCodec.encode(response, secret: secret) else {
+                // Leaving the caller to time out would tell it nothing, so say
+                // the response could not be produced.
+                await send(.responseEncodingFailed(origin: command.origin))
                 return
               }
               request.respond(with: responseData)
@@ -385,7 +487,9 @@ struct AppFeature {
 
       case .lockNowTapped:
         state.record("Locked — manual test", kind: .locked, id: uuid(), at: date.now)
-        return .run { _ in screenLocker.lock() }
+        return .run { send in
+          await send(.screenLockAttempted(succeeded: screenLocker.lock()))
+        }
 
       case .checkForUpdatesTapped:
         updater.checkForUpdates()
@@ -394,11 +498,11 @@ struct AppFeature {
       case .regenerateSecretTapped:
         let secret = PairingSecret.generate()
         state.pairingSecretBase64 = secret.base64
-        secretStore.save(secret.base64)
+        let stored = store(secret, in: &state)
         state.recentNonces.removeAll()
         state.$pairedClientRegistry.withLock { $0 = PairedClientRegistry() }
         state.record("Pairing secret regenerated — re-pair your devices", kind: .rejected, id: uuid(), at: date.now)
-        return .none
+        return stored
 
       case .pairingWindowClosed:
         state.justPairedWith = nil
@@ -421,7 +525,9 @@ struct AppFeature {
 
       case .launchAtLoginToggled(let enabled):
         state.launchAtLogin = enabled
-        return .run { _ in loginItem.setEnabled(enabled) }
+        return .run { send in
+          await send(.loginItemChanged(failure: loginItem.setEnabled(enabled)))
+        }
 
       case .remoteHostChanged(let host):
         state.$config.withLock { $0.remoteHost = host.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -465,11 +571,28 @@ struct AppFeature {
           id: uuid(),
           at: date.now,
         )
-        return .run { _ in screenLocker.lock() }
+        return .run { send in
+          await send(.screenLockAttempted(succeeded: screenLocker.lock()))
+        }
 
       case .proximityStatusChanged(let proximityStatus):
         state.proximityStatus = proximityStatus
-        return .none
+        // Bluetooth being off only matters when auto-lock is actually set up;
+        // otherwise the radio is nobody's business.
+        guard
+          state.config.proximityAutoLock,
+          !state.config.proximityDeviceID.isEmpty,
+          case .waitingForBluetooth(let reason) = proximityStatus
+        else {
+          return resolve(.bluetooth, in: &state)
+        }
+        return raise(
+          .bluetooth,
+          detail: reason.summary,
+          recovery: bluetoothRecovery(for: reason),
+          interrupts: reason.needsUserAction,
+          in: &state,
+        )
 
       case .proximityAutoLockToggled(let on):
         // Persist only; the config observer re-issues monitor().
@@ -570,6 +693,64 @@ struct AppFeature {
 
   private enum CancelID {
     case proximityPauseTimer
+  }
+
+  /// Record a problem and, the first time a subsystem breaks, interrupt with a
+  /// notification. Re-raising the same issue only refreshes its wording: a
+  /// listener retrying every 30 seconds must not notify every 30 seconds.
+  private func raise(
+    _ kind: AgentIssue.Kind,
+    detail: String,
+    recovery: AgentIssueRecovery? = nil,
+    interrupts: Bool = true,
+    in state: inout State,
+  ) -> Effect<Action> {
+    let wasHealthy = !state.issues.contains { $0.kind == kind }
+    let issue = AgentIssue(kind: kind, detail: detail, recovery: recovery)
+    guard wasHealthy || state.issues.first(where: { $0.kind == kind }) != issue else { return .none }
+    state.issues.removeAll { $0.kind == kind }
+    state.issues.append(issue)
+    state.issues.sort { $0.kind.severity < $1.kind.severity }
+
+    guard wasHealthy, interrupts, kind.interrupts else { return .none }
+    return .run { _ in
+      await notifier.post(id: kind.rawValue, title: issue.title, body: detail)
+    }
+  }
+
+  private func resolve(_ kind: AgentIssue.Kind, in state: inout State) -> Effect<Action> {
+    guard state.issues.contains(where: { $0.kind == kind }) else { return .none }
+    state.issues.removeAll { $0.kind == kind }
+    return .run { _ in await notifier.withdraw(id: kind.rawValue) }
+  }
+
+  /// Persist a freshly minted pairing secret, reporting a Keychain refusal
+  /// rather than letting the pairing silently expire at the next launch.
+  private func store(_ secret: PairingSecret, in state: inout State) -> Effect<Action> {
+    guard secretStore.save(secret.base64) else {
+      return raise(
+        .pairingSecret,
+        detail: "macOS refused to store the pairing secret in your login Keychain.",
+        in: &state,
+      )
+    }
+    return resolve(.pairingSecret, in: &state)
+  }
+
+  private func bluetoothRecovery(for reason: BluetoothUnavailability) -> AgentIssueRecovery? {
+    switch reason {
+    case .poweredOff:
+      SystemSettings.bluetooth.map(AgentIssueRecovery.openSettings)
+
+    case .unauthorized:
+      SystemSettings.bluetoothPrivacy.map(AgentIssueRecovery.openSettings)
+
+    // Nothing in System Settings fixes a missing radio or a restarting one.
+    case .resetting,
+         .unknown,
+         .unsupported:
+      nil
+    }
   }
 
   /// The proximity fields that, when changed, require re-issuing monitor().

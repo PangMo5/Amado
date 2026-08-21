@@ -17,12 +17,49 @@ struct DiscoveredDevice: Equatable, Sendable, Identifiable {
   let rssi: Int
 }
 
+// MARK: - BluetoothUnavailability
+
+/// Why Core Bluetooth cannot be used right now. Kept apart from the generic
+/// "waiting" state because turning Bluetooth back on and granting Amado
+/// permission are different jobs for the user.
+enum BluetoothUnavailability: Equatable, Sendable {
+  case poweredOff
+  case unauthorized
+  case unsupported
+  case resetting
+  case unknown
+
+  // MARK: Internal
+
+  var summary: String {
+    switch self {
+    case .poweredOff: "Bluetooth is off"
+    case .unauthorized: "Amado isn't allowed to use Bluetooth"
+    case .unsupported: "This Mac has no usable Bluetooth"
+    case .resetting: "Bluetooth is restarting"
+    case .unknown: "Bluetooth is unavailable"
+    }
+  }
+
+  /// Whether the user has to change something for monitoring to resume. A
+  /// restarting radio fixes itself, so it is not worth interrupting anyone.
+  var needsUserAction: Bool {
+    switch self {
+    case .poweredOff,
+         .unauthorized: true
+    case .resetting,
+         .unknown,
+         .unsupported: false
+    }
+  }
+}
+
 // MARK: - ProximityStatus
 
 /// Live status of the monitored device, for the Settings status line.
 enum ProximityStatus: Equatable, Sendable {
   case disabled
-  case waitingForBluetooth
+  case waitingForBluetooth(BluetoothUnavailability)
   case searching
   case learning(rssi: Int?)
   case near(rssi: Int, threshold: Int)
@@ -155,6 +192,16 @@ private final class ProximityEngine: NSObject, CBCentralManagerDelegate, CBPerip
   let farStream: AsyncStream<ProximityDecisionEngine.LockReason>
   let statusStream: AsyncStream<ProximityStatus>
 
+  static func unavailability(for state: CBManagerState) -> BluetoothUnavailability {
+    switch state {
+    case .poweredOff: .poweredOff
+    case .unauthorized: .unauthorized
+    case .unsupported: .unsupported
+    case .resetting: .resetting
+    default: .unknown
+    }
+  }
+
   func setMonitor(_ configuration: ProximityMonitorConfiguration) {
     queue.async {
       self.monitoredID = configuration.deviceID
@@ -195,7 +242,7 @@ private final class ProximityEngine: NSObject, CBCentralManagerDelegate, CBPerip
       emitStatus(monitoredID == nil ? .disabled : .reacquiring)
     } else {
       resetConnectionState(clearLearnedBaseline: false)
-      emitStatus(.waitingForBluetooth)
+      emitStatus(.waitingForBluetooth(Self.unavailability(for: central.state)))
     }
   }
 

@@ -9,7 +9,9 @@ import OSLog
 @DependencyClient
 struct ScreenLockerClient: Sendable {
   var isLocked: @Sendable () -> Bool = { false }
-  var lock: @Sendable () -> Void
+  /// Returns whether the lock entry point could be invoked at all. `false`
+  /// means the private symbol is gone, which no retry will fix.
+  var lock: @Sendable () -> Bool = { true }
 }
 
 // MARK: DependencyKey
@@ -20,7 +22,7 @@ extension ScreenLockerClient: DependencyKey {
     lock: lockScreenImmediately,
   )
 
-  static let testValue = ScreenLockerClient(isLocked: { false }, lock: { })
+  static let testValue = ScreenLockerClient(isLocked: { false }, lock: { true })
   static let previewValue = testValue
 }
 
@@ -38,21 +40,22 @@ extension DependencyValues {
 /// It is a private symbol resolved at runtime via `dlsym` (so there is no
 /// link-time dependency and no App Store submission is implied). If the symbol
 /// ever moves, the guard simply no-ops and logs — the agent stays alive.
-private func lockScreenImmediately() {
+private func lockScreenImmediately() -> Bool {
   let path = "/System/Library/PrivateFrameworks/login.framework/Versions/Current/login"
   guard let handle = dlopen(path, RTLD_NOW) else {
     logger.error("login.framework not loadable — cannot lock")
-    return
+    return false
   }
   defer { dlclose(handle) }
   guard let symbol = dlsym(handle, "SACLockScreenImmediate") else {
     logger.error("SACLockScreenImmediate symbol missing — cannot lock")
-    return
+    return false
   }
   typealias LockFn = @convention(c) () -> Int32
   let lock = unsafeBitCast(symbol, to: LockFn.self)
   let result = lock()
   logger.log("SACLockScreenImmediate returned \(result)")
+  return true
 }
 
 private let logger = Logger(subsystem: "dev.PangMo5.Amado", category: "ScreenLocker")

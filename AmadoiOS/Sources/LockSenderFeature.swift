@@ -24,7 +24,10 @@ struct LockSenderFeature {
     @Shared(.fileStorage(ControlCenterMacStore.fileURL)) var controlCenterSelection = ControlCenterMacSelection()
     var clientID = ""
     var clientName = ""
-    var status = ""
+    /// The last thing worth telling the user, or `nil` when there is nothing.
+    /// A failure carries what to retry, because "Failed: …" with no way to try
+    /// again just leaves people tapping the row and hoping.
+    var banner: LockBanner?
     var macLockStatuses = [UUID: MacLockStatus]()
     /// The Mac a send is in flight to, for a per-row spinner.
     var sendingMacID: UUID?
@@ -43,6 +46,8 @@ struct LockSenderFeature {
     case refreshStatusesRequested
     case macStatusResponse(macID: UUID, LockOperationResult)
     case lockResponse(macID: UUID, LockOperationResult)
+    case bannerRetryTapped
+    case bannerDismissed
   }
 
   @Dependency(\.lockDispatcher) var lockDispatcher
@@ -100,7 +105,7 @@ struct LockSenderFeature {
 
       case .pasteTapped:
         guard let string = UIPasteboard.general.string else {
-          state.status = "Clipboard is empty"
+          state.banner = LockBanner(.failure, "Clipboard is empty")
           return .none
         }
         return add(&state, from: string)
@@ -161,7 +166,10 @@ struct LockSenderFeature {
           case .notPaired:
             let displayName = state.pairedMacs.first { $0.id == macID }?.displayName ?? "Mac"
             removeLocally(macID, from: &state)
-            state.status = "\(displayName) was removed from the Mac. Pair it again to restore access."
+            state.banner = LockBanner(
+              .failure,
+              "\(displayName) was removed from the Mac. Pair it again to restore access.",
+            )
             return syncEffect(state)
 
           case .helloAccepted,
@@ -173,6 +181,19 @@ struct LockSenderFeature {
 
         case .failure:
           state.macLockStatuses[macID] = .unavailable
+          // One Mac not answering is ordinary and the row already says so.
+          // Every Mac not answering is a network problem worth naming.
+          guard
+            !state.pairedMacs.isEmpty,
+            state.pairedMacs.allSatisfy({ state.macLockStatuses[$0.id] == .unavailable })
+          else {
+            return .none
+          }
+          state.banner = LockBanner(
+            .failure,
+            "No paired Mac answered. Check that you're on the same network.",
+            retry: .refreshStatuses,
+          )
           return .none
         }
 
@@ -185,33 +206,60 @@ struct LockSenderFeature {
           switch response.outcome {
           case .alreadyLocked:
             state.macLockStatuses[macID] = .locked
-            state.status = "\(displayName) is already locked"
+            state.banner = LockBanner(.success, "\(displayName) is already locked")
 
           case .lockRequested:
             state.macLockStatuses[macID] = .unavailable
-            state.status = "Lock requested for \(displayName), but status confirmation was unavailable"
+            state.banner = LockBanner(
+              .failure,
+              "Lock requested for \(displayName), but it never confirmed.",
+              retry: .lock(macID: macID),
+            )
 
           case .locked:
             state.macLockStatuses[macID] = .locked
-            state.status = "Locked \(displayName) ✓"
+            state.banner = LockBanner(.success, "Locked \(displayName) ✓")
 
           case .notPaired:
             removeLocally(macID, from: &state)
-            state.status = "\(displayName) was removed from the Mac. Pair it again to restore access."
+            state.banner = LockBanner(
+              .failure,
+              "\(displayName) was removed from the Mac. Pair it again to restore access.",
+            )
             return syncEffect(state)
 
           case .helloAccepted,
                .unlocked,
                .unpaired:
-            state.status = "Unexpected response from \(displayName)"
+            state.banner = LockBanner(
+              .failure,
+              "\(displayName) sent an answer Amado didn't expect.",
+              retry: .lock(macID: macID),
+            )
           }
           return identityChanged ? syncEffect(state) : .none
 
         case .failure(let message):
           state.macLockStatuses[macID] = .unavailable
-          state.status = "Failed: \(message)"
+          state.banner = LockBanner(.failure, message, retry: .lock(macID: macID))
           return .none
         }
+
+      case .bannerRetryTapped:
+        guard let retry = state.banner?.retry else { return .none }
+        state.banner = nil
+        switch retry {
+        case .lock(let macID):
+          guard let mac = state.pairedMacs.first(where: { $0.id == macID }) else { return .none }
+          return lock(&state, mac: mac)
+
+        case .refreshStatuses:
+          return refreshStatuses(&state)
+        }
+
+      case .bannerDismissed:
+        state.banner = nil
+        return .none
       }
     }
   }
@@ -274,7 +322,7 @@ struct LockSenderFeature {
 
   private func lock(_ state: inout State, mac: PairedMac) -> Effect<Action> {
     state.sendingMacID = mac.id
-    state.status = "Locking \(mac.displayName)…"
+    state.banner = LockBanner(.progress, "Locking \(mac.displayName)…")
     return .run { send in
       do {
         let response = try await lockDispatcher.lock(mac)
@@ -321,7 +369,7 @@ struct LockSenderFeature {
 
   private func add(_ state: inout State, from string: String) -> Effect<Action> {
     guard let payload = PairingPayload.decode(string) else {
-      state.status = "Not a valid Amado pairing code"
+      state.banner = LockBanner(.failure, "That isn't a valid Amado pairing code.")
       return .none
     }
     state.$pendingUnpairs.withLock {
@@ -355,7 +403,7 @@ struct LockSenderFeature {
       mac = newMac
     }
     normalizeControlCenterSelection(&state)
-    state.status = "Paired with \(mac.displayName) ✓"
+    state.banner = LockBanner(.success, "Paired with \(mac.displayName) ✓")
     state.macLockStatuses[mac.id] = .checking
     // Say hello so the Mac shows the pairing landed, and push the updated list
     // to the watch.
@@ -372,6 +420,42 @@ struct LockSenderFeature {
       syncEffect(state),
     )
   }
+
+}
+
+// MARK: - LockBanner
+
+/// The one line of feedback shown above the Mac list.
+///
+/// Failures keep what they were trying to do so the banner can offer to do it
+/// again; successes and progress notes carry nothing.
+struct LockBanner: Equatable, Sendable {
+
+  // MARK: Lifecycle
+
+  init(_ kind: Kind, _ message: String, retry: Retry? = nil) {
+    self.kind = kind
+    self.message = message
+    self.retry = retry
+  }
+
+  // MARK: Internal
+
+  enum Kind: Equatable, Sendable {
+    case progress
+    case success
+    case failure
+  }
+
+  /// The action to run again when the banner's retry button is tapped.
+  enum Retry: Equatable, Sendable {
+    case lock(macID: UUID)
+    case refreshStatuses
+  }
+
+  let kind: Kind
+  let message: String
+  let retry: Retry?
 
 }
 

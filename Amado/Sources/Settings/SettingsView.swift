@@ -90,12 +90,23 @@ struct SettingsView: View {
     ).encoded()
   }
 
+  private var statusLine: String {
+    switch store.health {
+    case .impaired(let issue): issue.title
+    case .paused(let deadline):
+      "Auto-lock paused until \(deadline.formatted(date: .abbreviated, time: .shortened))"
+    case .listening: "Listening"
+    case .starting: "Starting…"
+    }
+  }
+
   private var generalPane: some View {
     Group {
       MacIdentitySection(
         name: store.macIdentity?.name ?? "Mac",
         deviceID: store.config.macID,
       )
+      AgentIssuesSection(store: store)
       Section {
         Toggle(
           "Launch at Login",
@@ -104,7 +115,7 @@ struct SettingsView: View {
             set: { store.send(.launchAtLoginToggled($0)) },
           ),
         )
-        LabeledContent("Status", value: store.isListening ? "Listening" : "Starting…")
+        LabeledContent("Status", value: statusLine)
       }
       Section {
         Button("Lock this Mac now") { store.send(.lockNowTapped) }
@@ -237,6 +248,71 @@ struct SettingsView: View {
     NSPasteboard.general.clearContents()
     NSPasteboard.general.setString(string, forType: .string)
   }
+
+}
+
+// MARK: - AgentIssuesSection
+
+/// Everything currently wrong with the agent. The menu bar only has room for
+/// the worst one, so this is where the rest become visible. It disappears
+/// entirely when the agent is healthy rather than showing a reassuring row
+/// nobody needs to read.
+private struct AgentIssuesSection: View {
+
+  let store: StoreOf<AppFeature>
+
+  var body: some View {
+    if !store.issues.isEmpty {
+      Section {
+        ForEach(store.issues) { issue in
+          LabeledContent {
+            IssueRecoveryButton(issue: issue) {
+              store.send(.issueRecoveryTapped(issue.kind))
+            }
+          } label: {
+            VStack(alignment: .leading, spacing: 2) {
+              Text(issue.title)
+              Text(issue.detail)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+          }
+        }
+      } header: {
+        Label("Needs attention", systemSymbol: .exclamationmarkTriangleFill)
+          .foregroundStyle(.orange)
+      }
+    }
+  }
+
+}
+
+// MARK: - IssueRecoveryButton
+
+private struct IssueRecoveryButton: View {
+
+  // MARK: Internal
+
+  let issue: AgentIssue
+  let onRetry: () -> Void
+
+  var body: some View {
+    switch issue.recovery {
+    case .retry:
+      Button("Try Again", action: onRetry)
+
+    case .openSettings(let url):
+      Button("Open Settings") { openURL(url) }
+
+    case nil:
+      EmptyView()
+    }
+  }
+
+  // MARK: Private
+
+  @Environment(\.openURL) private var openURL
 
 }
 
@@ -542,7 +618,7 @@ private struct ProximitySettingsPane: View {
   private func statusText(_ status: ProximityStatus) -> String {
     switch status {
     case .disabled: "Off"
-    case .waitingForBluetooth: "Turn on Bluetooth"
+    case .waitingForBluetooth(let reason): reason.summary
     case .searching: "Looking for your device…"
     case .learning(let rssi):
       rssi.map { "Learning nearby signal · \($0) dBm" } ?? "Learning nearby signal…"
