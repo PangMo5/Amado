@@ -49,7 +49,7 @@ configuration.
 | --- | --- | ---: | --- |
 | `mac_id` | String | generated once | Stable UUID shared with paired clients. Do not copy another Mac's value. |
 | `remote_host` | String | `""` | Public hostname of a user-operated HTTPS tunnel. Do not include `https://` or a path. Empty means LAN-only. |
-| `caffeinate_mode` | String | `"off"` | Caffeinate behavior: `"off"` sleeps normally, `"lock"` stays awake and locks the login session, and `"unlocked"` stays awake without locking. Awake modes require one-time approval of Amado's Power Helper. |
+| `caffeinate_mode` | String | `"off"` | Caffeinate behavior: `"off"` sleeps normally, `"lock"` stays awake and locks the login session, and `"unlocked"` stays awake without locking. Install the Power Helper explicitly in Settings before using an awake mode. |
 | `proximity_auto_lock` | Boolean | `false` | Enables walk-away locking using the selected iPhone's Bluetooth signal. |
 | `caffeinate_pauses_auto_lock` | Boolean | `false` | Pauses proximity Auto-lock while Caffeinate is set to `"unlocked"`. The setting is ignored in `"off"` and `"lock"` modes. |
 | `proximity_pause_until` | Number | omitted | Unix timestamp at which a temporary auto-lock pause ends. Prefer setting this from the menu bar or Settings. The key is removed when auto-lock resumes. |
@@ -78,15 +78,19 @@ starts monitoring again automatically, including after an app restart.
 It stops monitoring only while `caffeinate_mode = "unlocked"` and ends as soon
 as Caffeinate changes to another mode.
 
-`caffeinate_mode` is the desired policy, while the live helper status in
-Settings is the source of truth for whether an awake mode's privileged
-override is actually active. See [Caffeinate](CAFFEINATE.md) for
-approval, locking, and safety behavior.
+An awake `caffeinate_mode` is accepted only while Settings reports the current
+Power Helper as **Installed**. If the helper is missing, awaiting approval,
+outdated, or failed, Amado resets the key to `"off"` and keeps the awake choices
+disabled. The live Caffeinate status remains the source of truth for whether
+the privileged override is active. See [Caffeinate](CAFFEINATE.md) for
+installation, approval, locking, and safety behavior.
 
 Setting `caffeinate_mode` to `"lock"` or `"unlocked"` by editing this file
-bypasses the interactive safety confirmation, but not the operational risks or
-the user's responsibility. Keep the Mac on a hard, stable, well-ventilated
-surface; never run it closed in a bag, bedding, or another enclosed space.
+bypasses the interactive safety confirmation only when the current Power Helper
+is already installed. It does not bypass helper availability, the operational
+risks, or the user's responsibility. Keep the Mac on a hard, stable,
+well-ventilated surface; never run it closed in a bag, bedding, or another
+enclosed space.
 
 ## Reload behavior
 

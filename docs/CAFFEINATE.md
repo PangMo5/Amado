@@ -8,17 +8,30 @@ the login session locks.
 
 ## Enable it
 
-1. Open **Amado › Settings › General › Caffeinate**.
-2. Set **When the lid closes** to **Stay awake and lock** or **Stay awake, keep
+1. Open **Amado › Settings › Caffeinate**.
+2. Choose **Install Power Helper**. Amado never installs it merely because a
+   Caffeinate policy was selected.
+3. If macOS requests approval, open **General › Login Items & Extensions** and
+   approve **Amado Power Helper** with an administrator account. Return to
+   Amado and choose **Check Again**.
+4. Wait until **Installation** reports **Installed**. The policy control remains
+   disabled while the helper is unavailable.
+5. Set **When the lid closes** to **Stay awake and lock** or **Stay awake, keep
    unlocked**.
-3. macOS opens **General › Login Items & Extensions**. Approve **Amado Power
-   Helper** with an administrator account.
-4. Return to Amado and choose **Try Again**.
 
-The mode is remembered. On later launches Amado silently reacquires the
-Caffeinate lease when the approved helper is available. Settings shows the live
-status separately from the saved mode, so an approval or helper failure is
-never presented as active.
+The mode is remembered while the current approved helper remains available. On
+later launches Amado verifies that helper first and then silently reacquires the
+Caffeinate lease. If the helper is missing, awaiting approval, outdated, or
+failed, Amado restores **Sleep normally** and keeps the awake choices disabled
+instead of preserving a policy that cannot take effect.
+
+Amado shows the Power Helper's installation state and installed version
+separately from Caffeinate's active state. After an app update, an older helper
+is shown as **Update available** and is replaced only when you choose **Update
+Power Helper**. Select an awake policy again after the update finishes. To
+return to a clean first-use state, choose **Remove Power Helper…**. This turns
+Caffeinate off and restores normal lid-close sleep; the disabled Remove button
+and **Not installed** status then make the result explicit.
 
 ## Locking policy
 
@@ -84,7 +97,7 @@ environment, workload, battery level, physical security, and timely shutdown
 of the override. To the extent permitted by applicable law, Amado and its
 contributors are not liable for battery depletion, interrupted work, data
 loss, hardware damage, overheating, or injury resulting from use of the
-feature. The warranty and liability terms in sections 6 and 7 of the
-[Mozilla Public License 2.0](../LICENSE) also apply.
+feature. The warranty and liability terms in sections 15 and 16 of the
+[GNU Affero General Public License v3.0 only](../LICENSE) also apply.
 
 [apple-thermal]: https://support.apple.com/102336

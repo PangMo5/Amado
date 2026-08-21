@@ -1,0 +1,22 @@
+version = 1
+SPDX-PackageName = "Amado"
+SPDX-PackageSupplier = "Person: PangMo5"
+SPDX-PackageDownloadLocation = "https://github.com/PangMo5/Amado"
+
+[[annotations]]
+path = "**"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 PangMo5 and contributors"
+SPDX-License-Identifier = "AGPL-3.0-only"
+
+[[annotations]]
+path = [
+  "AmadoKit/**",
+  "AmadoiOS/**",
+  "AmadoWatch/**",
+  "AmadoWidget/**",
+  "MobileResources/**",
+]
+precedence = "override"
+SPDX-FileCopyrightText = "2026 PangMo5 and contributors"
+SPDX-License-Identifier = "MPL-2.0"

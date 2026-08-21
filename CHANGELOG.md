@@ -4,6 +4,14 @@ Notable changes to the Amado macOS app are documented here. Versions follow sema
 
 ## Unreleased
 
+## 2.0.1 (2026-08-22)
+
+- **Explicit Power Helper lifecycle:** Caffeinate now shows whether its helper is missing, awaiting approval, installed, or outdated. Installation and updates happen only from their dedicated buttons; removal is disabled when no helper is registered.
+- **Fixed Power Helper updates:** Amado verifies the registered helper's version and build and refuses to report Caffeinate as active until the current bundled helper answers.
+- **First-class Caffeinate settings:** Caffeinate now has its own Settings pane with separate helper-installation and sleep-override status, direct access to Login Items & Extensions, and an explicit removal action that restores normal lid-close sleep.
+- **Consistent unavailable state:** The Caffeinate controls stay disabled until the current Power Helper is ready. Missing, unapproved, outdated, or failed helpers reset a stale awake policy to normal lid-close sleep instead of accepting a selection that cannot take effect.
+- **License boundary:** The macOS app, Power Helper, tooling, documentation, and website are now AGPL-3.0-only. The iPhone, Apple Watch, Widget, and shared `AmadoKit` sources remain MPL-2.0.
+
 ## 2.0.0 (2026-08-22)
 
 - **Caffeinate:** Keep a MacBook running after its lid closes with an explicit Off/Lock/Unlocked policy. The default awake policy locks the login session and sleeps the displays; the unlocked policy can pause proximity Auto-lock for as long as it remains selected.

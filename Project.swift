@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 PangMo5 and contributors
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import ProjectDescription
 
 let bundleIdPrefix = "dev.PangMo5"
@@ -6,7 +9,7 @@ let bundleIdPrefix = "dev.PangMo5"
 // (TUIST_DEVELOPMENT_TEAM, …); in CI they come from repository secrets.
 let developmentTeam = Environment.developmentTeam.getString(default: "")
 let sparklePublicEDKey = Environment.sparklePublicEdKey.getString(default: "")
-let macOSVersion = "2.0.0"
+let macOSVersion = "2.0.1"
 let iOSVersion = "1.0.0"
 // Release workflows inject the build number. Local builds use 1.
 let buildNumber = Environment.buildNumber.getString(default: "1")
@@ -81,7 +84,8 @@ let project = Project(
         "LSApplicationCategoryType": "public.app-category.utilities",
         "CFBundleDisplayName": "$(APP_DISPLAY_NAME)",
         "CFBundleName": "$(APP_DISPLAY_NAME)",
-        "NSHumanReadableCopyright": "© 2026 PangMo5.",
+        "NSHumanReadableCopyright":
+          "© 2026 PangMo5. Released under AGPL-3.0-only.",
         // macOS 15+ gates local-network listeners behind this prompt.
         "NSLocalNetworkUsageDescription": .string(localNetworkUsage),
         "NSBonjourServices": .array([.string("_amado._tcp")]),
@@ -91,7 +95,12 @@ let project = Project(
         "SUPublicEDKey": "$(SPARKLE_PUBLIC_ED_KEY)",
       ]),
       sources: ["Amado/Sources/**", "AmadoPowerHelper/Shared/**"],
-      resources: ["Amado/Resources/**"],
+      resources: [
+        "Amado/Resources/**",
+        "LICENSE",
+        "LICENSES/MPL-2.0.txt",
+        "NOTICE.md",
+      ],
       copyFiles: [
         .executables(
           name: "Embed Power Helper",
@@ -148,6 +157,8 @@ let project = Project(
       sources: ["AmadoPowerHelper/Sources/**", "AmadoPowerHelper/Shared/**"],
       settings: .settings(base: signingSettings.merging([
         "PRODUCT_NAME": "AmadoPowerHelper",
+        "MARKETING_VERSION": SettingValue(stringLiteral: macOSVersion),
+        "CURRENT_PROJECT_VERSION": SettingValue(stringLiteral: buildNumber),
         "GENERATE_INFOPLIST_FILE": "YES",
         "CREATE_INFOPLIST_SECTION_IN_BINARY": "YES",
         "SKIP_INSTALL": "YES",
@@ -173,7 +184,12 @@ let project = Project(
         "ITSAppUsesNonExemptEncryption": false,
       ]),
       sources: ["AmadoiOS/Sources/**"],
-      resources: ["AmadoiOS/Resources/**", "MobileResources/**"],
+      resources: [
+        "AmadoiOS/Resources/**",
+        "MobileResources/**",
+        "LICENSES/MPL-2.0.txt",
+        "NOTICE.md",
+      ],
       entitlements: .file(path: "AmadoiOS/AmadoiOS.entitlements"),
       dependencies: [
         .target(name: "AmadoKit"),

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 PangMo5 and contributors
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import AmadoKit
 import AppKit
 import ComposableArchitecture
@@ -28,6 +31,7 @@ struct SettingsView: View {
         switch pane ?? .general {
         case .general: generalPane
         case .proximity: ProximitySettingsPane(store: store)
+        case .caffeinate: CaffeinateSettingsPane(store: store)
         case .remote: remotePane
         case .pairing: pairingPane
         case .about: AboutSection(store: store)
@@ -44,6 +48,7 @@ struct SettingsView: View {
   private enum Pane: String, CaseIterable, Identifiable {
     case general
     case proximity
+    case caffeinate
     case remote
     case pairing
     case about
@@ -58,6 +63,7 @@ struct SettingsView: View {
       switch self {
       case .general: "General"
       case .proximity: "Auto-lock"
+      case .caffeinate: "Caffeinate"
       case .remote: "Remote access"
       case .pairing: "Pairing"
       case .about: "About"
@@ -68,6 +74,7 @@ struct SettingsView: View {
       switch self {
       case .general: .gearshape
       case .proximity: .figureWalk
+      case .caffeinate: .cupAndSaucerFill
       case .remote: .network
       case .pairing: .qrcode
       case .about: .infoCircle
@@ -128,7 +135,6 @@ struct SettingsView: View {
         )
         LabeledContent("Status", value: statusLine)
       }
-      CaffeinateSettingsSection(store: store)
       Section {
         Button("Lock this Mac now") { store.send(.lockNowTapped) }
       } footer: {
@@ -272,66 +278,135 @@ struct SettingsView: View {
 
 }
 
-// MARK: - CaffeinateSettingsSection
+// MARK: - CaffeinateSettingsPane
 
-private struct CaffeinateSettingsSection: View {
+private struct CaffeinateSettingsPane: View {
+
+  // MARK: Internal
 
   let store: StoreOf<AppFeature>
 
   var body: some View {
-    Section {
-      Picker(
-        "When the lid closes",
-        selection: Binding(
-          get: { store.config.closedLidMode },
-          set: { store.send(.closedLidModeChanged($0)) },
-        ),
-      ) {
-        ForEach(ClosedLidMode.allCases, id: \.self) { mode in
-          Text(mode.title).tag(mode)
+    Group {
+      Section {
+        Picker(
+          "When the lid closes",
+          selection: Binding(
+            get: { store.config.closedLidMode },
+            set: { store.send(.closedLidModeChanged($0)) },
+          ),
+        ) {
+          ForEach(ClosedLidMode.allCases, id: \.self) { mode in
+            Text(mode.title)
+              .tag(mode)
+          }
         }
+        .disabled(!store.powerHelperStatus.isReady)
+
+        if store.config.closedLidMode.keepsAwake {
+          Label(
+            "Caffeinate disables normal lid-close sleep. Use this Mac only on a hard, stable, "
+              + "well-ventilated surface—never in a bag, bedding, or enclosed space. You are "
+              + "responsible for monitoring heat and battery.",
+            systemSymbol: .exclamationmarkTriangleFill,
+          )
+          .foregroundStyle(.orange)
+          .fixedSize(horizontal: false, vertical: true)
+          .accessibilityElement(children: .combine)
+        }
+
+        if store.config.closedLidMode == .unlocked {
+          Label(
+            "The login session remains unlocked while the Mac is closed.",
+            systemSymbol: .exclamationmarkTriangleFill,
+          )
+          .foregroundStyle(.orange)
+        }
+      } header: {
+        Text("Behavior")
       }
 
-      if store.config.closedLidMode.keepsAwake {
-        Label(
-          "Caffeinate disables normal lid-close sleep. Use this Mac only on a hard, stable, "
-            + "well-ventilated surface—never in a bag, bedding, or enclosed space. You are "
-            + "responsible for monitoring heat and battery.",
-          systemSymbol: .exclamationmarkTriangleFill,
+      Section {
+        LabeledContent(
+          "Installation",
+          value: helperStatusSummary,
         )
-        .foregroundStyle(.orange)
-        .fixedSize(horizontal: false, vertical: true)
-        .accessibilityElement(children: .combine)
-      }
-
-      if store.config.closedLidMode == .unlocked {
-        Label(
-          "The login session remains unlocked while the Mac is closed.",
-          systemSymbol: .exclamationmarkTriangleFill,
-        )
-        .foregroundStyle(.orange)
-      }
-
-      if store.config.closedLidMode.keepsAwake {
         LabeledContent(
           "Caffeinate status",
-          value: store.isApplyingClosedLidMode ? "Starting…" : store.closedLidStatus.summary,
+          value: statusSummary,
         )
-        if !store.isApplyingClosedLidMode, store.closedLidStatus != .active {
+        if
+          store.config.closedLidMode.keepsAwake,
+          !store.isApplyingClosedLidMode,
+          !store.isRemovingPowerHelper,
+          store.closedLidStatus != .active
+        {
           Button("Try Again") { store.send(.closedLidRetryTapped) }
         }
+        HStack {
+          Button(store.powerHelperStatus.installButtonTitle) {
+            store.send(.caffeinateInstallHelperTapped)
+          }
+          .disabled(!store.powerHelperStatus.canInstall || isHelperBusy)
+
+          Button("Remove Power Helper…", role: .destructive) {
+            store.send(.caffeinateRemoveHelperTapped)
+          }
+          .disabled(!store.powerHelperStatus.canRemove || isHelperBusy)
+        }
+
+        if store.powerHelperStatus == .requiresApproval {
+          Button("Open Login Items & Extensions…") {
+            store.send(.caffeinateHelperSettingsTapped)
+          }
+          Button("Check Again") {
+            store.send(.caffeinateHelperStatusRefreshTapped)
+          }
+          .disabled(isHelperBusy)
+        }
+      } header: {
+        Text("Power Helper")
+      } footer: {
+        Text(
+          "Amado uses a narrowly scoped Power Helper to keep macOS running after the MacBook lid closes. "
+            + "Install it explicitly before enabling Caffeinate; macOS may ask an administrator to approve "
+            + "it in Login Items & Extensions. The helper restores normal sleep if Amado disconnects. "
+            + "Removing it turns Caffeinate off."
+        )
       }
-    } header: {
-      Text("Caffeinate")
-    } footer: {
-      Text(
-        "Amado uses a narrowly scoped Power Helper to keep macOS running after the MacBook lid closes. "
-          + "macOS asks an administrator to approve it once in Login Items & Extensions. The helper "
-          + "restores normal sleep if Amado disconnects. Both awake policies turn off the built-in "
-          + "display: the lock policy uses display sleep, while the unlocked policy turns off only "
-          + "the built-in backlight and restores its previous brightness when the lid opens."
-      )
+
+      Section {
+        Text(
+          "Both awake policies turn off the built-in display: the lock policy uses display sleep, "
+            + "while the unlocked policy turns off only the built-in backlight and restores its "
+            + "previous brightness when the lid opens."
+        )
+        .foregroundStyle(.secondary)
+      } header: {
+        Text("Display behavior")
+      }
     }
+  }
+
+  // MARK: Private
+
+  private var statusSummary: String {
+    if store.isRemovingPowerHelper { return "Removing…" }
+    if store.isApplyingClosedLidMode { return "Starting…" }
+    return store.closedLidStatus.summary
+  }
+
+  private var helperStatusSummary: String {
+    if store.isInstallingPowerHelper { return "Installing…" }
+    if store.isRefreshingPowerHelper { return "Checking…" }
+    if store.isRemovingPowerHelper { return "Removing…" }
+    return store.powerHelperStatus.summary
+  }
+
+  private var isHelperBusy: Bool {
+    store.isInstallingPowerHelper
+      || store.isRefreshingPowerHelper
+      || store.isRemovingPowerHelper
   }
 
 }
@@ -446,7 +521,7 @@ private struct AboutSection: View {
         VStack(alignment: .leading, spacing: 2) {
           Text("Amado")
             .font(.title2.weight(.semibold))
-          Text("Secure remote and walk-away Mac locking")
+          Text("One tap. Walk away. Close the lid.")
             .font(.subheadline)
             .foregroundStyle(.secondary)
         }
@@ -474,6 +549,27 @@ private struct AboutSection: View {
       Text("Amado checks for signed updates with Sparkle.")
         .font(.caption)
         .foregroundStyle(.secondary)
+    }
+
+    Section("Legal") {
+      LabeledContent("Copyright", value: "© 2026 PangMo5 and contributors")
+      Text(
+        "The Mac app is AGPL-3.0-only. The iPhone, Watch, Widget, and shared core sources are MPL-2.0. Select Licensing Notice for the exact boundary."
+      )
+      .font(.caption)
+      .foregroundStyle(.secondary)
+
+      ForEach(LegalDocument.allCases) { document in
+        Button {
+          presentedDocument = document
+        } label: {
+          Text(document.title)
+        }
+        .buttonStyle(.link)
+      }
+    }
+    .sheet(item: $presentedDocument) { document in
+      LegalDocumentView(document: document)
     }
 
     Section("Built with") {
@@ -509,6 +605,112 @@ private struct AboutSection: View {
     let build = info?["CFBundleVersion"] as? String ?? "—"
     return "\(short) (\(build))"
   }()
+
+  @State private var presentedDocument: LegalDocument?
+
+}
+
+// MARK: - LegalDocument
+
+/// Legal documents shipped in the app bundle and presented without relying on
+/// an external editor or a network connection.
+private enum LegalDocument: String, CaseIterable, Identifiable, Sendable {
+  case macLicense
+  case mobileLicense
+  case licensingNotice
+
+  // MARK: Internal
+
+  var id: Self {
+    self
+  }
+
+  var title: LocalizedStringResource {
+    switch self {
+    case .macLicense: "Mac License (AGPL-3.0-only)"
+    case .mobileLicense: "iOS and Shared License (MPL-2.0)"
+    case .licensingNotice: "Licensing Notice"
+    }
+  }
+
+  func loadContents() async throws -> String {
+    let resource = resource
+    guard
+      let url = Bundle.main.url(
+        forResource: resource.name,
+        withExtension: resource.extension,
+      )
+    else {
+      throw CocoaError(.fileNoSuchFile)
+    }
+
+    return try await Task.detached(priority: .userInitiated) {
+      try String(contentsOf: url, encoding: .utf8)
+    }.value
+  }
+
+  // MARK: Private
+
+  private var resource: (name: String, extension: String?) {
+    switch self {
+    case .macLicense: ("LICENSE", nil)
+    case .mobileLicense: ("MPL-2.0", "txt")
+    case .licensingNotice: ("NOTICE", "md")
+    }
+  }
+}
+
+// MARK: - LegalDocumentView
+
+private struct LegalDocumentView: View {
+
+  // MARK: Internal
+
+  let document: LegalDocument
+
+  var body: some View {
+    NavigationStack {
+      Group {
+        if let contents {
+          ScrollView {
+            Text(contents)
+              .font(.system(.body, design: .monospaced))
+              .textSelection(.enabled)
+              .frame(maxWidth: .infinity, alignment: .leading)
+              .padding()
+          }
+        } else if let loadErrorMessage {
+          ContentUnavailableView(
+            "Unable to Open Document",
+            systemImage: "doc.badge.exclamationmark",
+            description: Text(loadErrorMessage),
+          )
+        } else {
+          ProgressView("Loading document…")
+        }
+      }
+      .navigationTitle(Text(document.title))
+      .toolbar {
+        ToolbarItem(placement: .confirmationAction) {
+          Button("Done") { dismiss() }
+        }
+      }
+    }
+    .frame(minWidth: 680, minHeight: 520)
+    .task(id: document.id) {
+      do {
+        contents = try await document.loadContents()
+      } catch {
+        loadErrorMessage = error.localizedDescription
+      }
+    }
+  }
+
+  // MARK: Private
+
+  @Environment(\.dismiss) private var dismiss
+  @State private var contents: String?
+  @State private var loadErrorMessage: String?
 
 }
 

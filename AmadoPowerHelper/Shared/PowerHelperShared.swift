@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 PangMo5 and contributors
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import Foundation
 import Security
 
@@ -10,10 +13,40 @@ import Security
 /// the app.
 @objc(AmadoPowerHelperProtocol)
 protocol PowerHelperProtocol: AnyObject {
+  func getBuild(
+    withReply reply: @escaping @Sendable (_ version: String, _ build: String) -> Void
+  )
+
   func setClosedLidMode(
     _ enabled: Bool,
     withReply reply: @escaping @Sendable (Bool) -> Void,
   )
+}
+
+// MARK: - PowerHelperBuild
+
+/// Identifies the exact helper bundled with the running app. Service
+/// Management keeps an already-registered daemon instead of replacing it, so
+/// the app verifies this handshake before acquiring a sleep-override lease.
+struct PowerHelperBuild: Equatable, Sendable {
+  static var current: Self {
+    let info = Bundle.main.infoDictionary
+    return Self(
+      version: info?["CFBundleShortVersionString"] as? String ?? "",
+      build: info?["CFBundleVersion"] as? String ?? "",
+    )
+  }
+
+  let version: String
+  let build: String
+
+  var displayName: String {
+    "\(version) (\(build))"
+  }
+
+  var isValid: Bool {
+    !version.isEmpty && !build.isEmpty
+  }
 }
 
 // MARK: - PowerHelperConstants

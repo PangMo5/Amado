@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 PangMo5 and contributors
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import AmadoKit
 import Combine
 import ComposableArchitecture
@@ -45,7 +48,11 @@ struct AppFeature {
     var isListening = false
     var launchAtLogin = false
     var closedLidStatus = ClosedLidControlStatus.inactive
+    var powerHelperStatus = PowerHelperInstallationStatus.checking
     var isApplyingClosedLidMode = false
+    var isInstallingPowerHelper = false
+    var isRefreshingPowerHelper = false
+    var isRemovingPowerHelper = false
     /// Last closed-lid policy whose power state was submitted to the helper.
     /// This deduplicates the config publisher after an in-app edit while still
     /// applying edits made directly to config.toml.
@@ -165,6 +172,18 @@ struct AppFeature {
     case closedLidModeChanged(ClosedLidMode)
     case caffeinateSafetyConfirmationFinished(mode: ClosedLidMode, confirmed: Bool)
     case caffeinateAutoLockPauseChoiceSelected(CaffeinateAutoLockPauseChoice)
+    case caffeinateHelperStatusRefreshTapped
+    case caffeinateHelperStatusResponse(PowerHelperInstallationStatus)
+    case caffeinateHelperSettingsTapped
+    case caffeinateInstallHelperTapped
+    case caffeinateInstallHelperResponse(PowerHelperInstallationStatus)
+    case caffeinateRemoveHelperTapped
+    case caffeinateRemoveHelperConfirmationFinished(Bool)
+    case caffeinateRemoveHelperResponse(
+      previousMode: ClosedLidMode,
+      previousAutoLockPause: Bool,
+      status: PowerHelperInstallationStatus,
+    )
     case closedLidRetryTapped
     case closedLidApplyResponse(
       requestedMode: ClosedLidMode,
@@ -308,6 +327,9 @@ struct AppFeature {
             }
           },
           .run { send in
+            await send(.caffeinateHelperStatusResponse(await closedLidControl.helperStatus()))
+          },
+          .run { send in
             proximityLock.monitor(proximityConfiguration)
             for await reason in proximityLock.farEvents() {
               await send(.proximityFarDetected(reason))
@@ -337,16 +359,6 @@ struct AppFeature {
           },
           proximityPauseTimer(for: cfg),
         ])
-        if cfg.closedLidMode.keepsAwake {
-          state.isApplyingClosedLidMode = true
-          startupEffects.append(
-            applyClosedLidMode(
-              cfg.closedLidMode,
-              previousMode: .off,
-              userInitiated: false,
-            )
-          )
-        }
         return .merge(startupEffects)
 
       case .lanListenerStateChanged(let listenerState):
@@ -432,6 +444,7 @@ struct AppFeature {
 
       case .closedLidModeChanged(let mode):
         guard mode != state.config.closedLidMode else { return .none }
+        guard !mode.keepsAwake || state.powerHelperStatus.isReady else { return .none }
         if mode.keepsAwake, !state.config.closedLidMode.keepsAwake {
           return .run { send in
             await send(
@@ -465,6 +478,160 @@ struct AppFeature {
       case .caffeinateAutoLockPauseChoiceSelected(.cancel):
         return .none
 
+      case .caffeinateHelperStatusRefreshTapped:
+        guard !state.isRefreshingPowerHelper else { return .none }
+        state.isRefreshingPowerHelper = true
+        return .run { send in
+          await send(.caffeinateHelperStatusResponse(await closedLidControl.helperStatus()))
+        }
+
+      case .caffeinateHelperStatusResponse(let status):
+        state.isRefreshingPowerHelper = false
+        state.powerHelperStatus = status
+        switch status {
+        case .installed:
+          guard
+            state.config.closedLidMode.keepsAwake,
+            state.closedLidStatus != .active,
+            !state.isApplyingClosedLidMode
+          else { return resolve(.closedLidPower, in: &state) }
+          state.isApplyingClosedLidMode = true
+          return applyClosedLidMode(
+            state.config.closedLidMode,
+            previousMode: .off,
+            userInitiated: false,
+          )
+
+        case .notInstalled,
+             .requiresApproval,
+             .updateAvailable,
+             .failed:
+          return resetUnavailableCaffeinate(in: &state)
+
+        case .checking:
+          return .none
+        }
+
+      case .caffeinateHelperSettingsTapped:
+        return .run { _ in await closedLidControl.openHelperSettings() }
+
+      case .caffeinateInstallHelperTapped:
+        guard
+          state.powerHelperStatus.canInstall,
+          !state.isInstallingPowerHelper,
+          !state.isRemovingPowerHelper
+        else { return .none }
+        state.isInstallingPowerHelper = true
+        return .run { send in
+          await send(.caffeinateInstallHelperResponse(await closedLidControl.installHelper()))
+        }
+
+      case .caffeinateInstallHelperResponse(let status):
+        state.isInstallingPowerHelper = false
+        state.powerHelperStatus = status
+        switch status {
+        case .installed:
+          guard state.config.closedLidMode.keepsAwake else {
+            return resolve(.closedLidPower, in: &state)
+          }
+          state.isApplyingClosedLidMode = true
+          return applyClosedLidMode(
+            state.config.closedLidMode,
+            previousMode: state.config.closedLidMode,
+            userInitiated: true,
+          )
+
+        case .requiresApproval:
+          let issue = raise(
+            .closedLidPower,
+            detail: status.summary,
+            recovery: .openLoginItems,
+            in: &state,
+          )
+          return .merge(
+            issue,
+            .run { _ in await closedLidControl.openHelperSettings() },
+          )
+
+        case .failed:
+          return raise(
+            .closedLidPower,
+            detail: status.summary,
+            in: &state,
+          )
+
+        case .checking,
+             .notInstalled,
+             .updateAvailable:
+          return .none
+        }
+
+      case .caffeinateRemoveHelperTapped:
+        guard
+          state.powerHelperStatus.canRemove,
+          !state.isInstallingPowerHelper,
+          !state.isRemovingPowerHelper
+        else { return .none }
+        return .run { send in
+          await send(
+            .caffeinateRemoveHelperConfirmationFinished(
+              await caffeinatePrompt.confirmHelperRemoval()
+            )
+          )
+        }
+
+      case .caffeinateRemoveHelperConfirmationFinished(false):
+        return .none
+
+      case .caffeinateRemoveHelperConfirmationFinished(true):
+        let previousMode = state.config.closedLidMode
+        let previousAutoLockPause = state.config.caffeinatePausesAutoLock
+        state.isRemovingPowerHelper = true
+        state.isApplyingClosedLidMode = false
+        state.$config.withLock {
+          $0.closedLidMode = .off
+          $0.caffeinatePausesAutoLock = false
+        }
+        state.appliedClosedLidMode = .off
+        return .merge(
+          .cancel(id: CancelID.closedLidApply),
+          .run { send in
+            let status = await closedLidControl.removeHelper()
+            await send(
+              .caffeinateRemoveHelperResponse(
+                previousMode: previousMode,
+                previousAutoLockPause: previousAutoLockPause,
+                status: status,
+              )
+            )
+          },
+        )
+
+      case .caffeinateRemoveHelperResponse(let previousMode, let previousAutoLockPause, let status):
+        state.isRemovingPowerHelper = false
+        state.powerHelperStatus = status
+        guard status == .notInstalled else {
+          state.$config.withLock {
+            $0.closedLidMode = previousMode
+            $0.caffeinatePausesAutoLock = previousAutoLockPause
+          }
+          state.appliedClosedLidMode = previousMode
+          let failure = ClosedLidControlStatus.failed(
+            "Power Helper removal did not finish: \(status.diagnostic)"
+          )
+          state.closedLidStatus = failure
+          return raise(
+            .closedLidPower,
+            detail: failure.summary,
+            in: &state,
+          )
+        }
+        state.closedLidStatus = .inactive
+        return .merge(
+          resolve(.closedLidPower, in: &state),
+          resolve(.closedLidDisplay, in: &state),
+        )
+
       case .closedLidRetryTapped:
         guard state.config.closedLidMode.keepsAwake else { return .none }
         state.isApplyingClosedLidMode = true
@@ -480,9 +647,21 @@ struct AppFeature {
         switch status {
         case .active,
              .inactive:
+          if status == .active {
+            state.powerHelperStatus = .installed(.current)
+          }
           return resolve(.closedLidPower, in: &state)
 
+        case .helperNotInstalled:
+          state.powerHelperStatus = .notInstalled
+          return raise(
+            .closedLidPower,
+            detail: status.summary,
+            in: &state,
+          )
+
         case .requiresApproval:
+          state.powerHelperStatus = .requiresApproval
           let issue = raise(
             .closedLidPower,
             detail: status.summary,
@@ -528,6 +707,7 @@ struct AppFeature {
         state.closedLidStatus = status
         switch status {
         case .active:
+          state.powerHelperStatus = .installed(.current)
           return resolve(.closedLidPower, in: &state)
 
         case .inactive:
@@ -542,10 +722,19 @@ struct AppFeature {
           )
 
         case .requiresApproval:
+          state.powerHelperStatus = .requiresApproval
           return raise(
             .closedLidPower,
             detail: status.summary,
             recovery: .openLoginItems,
+            in: &state,
+          )
+
+        case .helperNotInstalled:
+          state.powerHelperStatus = .notInstalled
+          return raise(
+            .closedLidPower,
+            detail: status.summary,
             in: &state,
           )
 
@@ -958,20 +1147,28 @@ struct AppFeature {
         let previousClosedLidMode = state.appliedClosedLidMode
         let newClosedLidMode = newConfig.closedLidMode
         if newClosedLidMode != previousClosedLidMode {
-          state.appliedClosedLidMode = newClosedLidMode
-          if
-            !previousClosedLidMode.keepsAwake
-            || !newClosedLidMode.keepsAwake
-            || state.closedLidStatus != .active
-          {
-            state.isApplyingClosedLidMode = true
-            effects.append(
-              applyClosedLidMode(
-                newClosedLidMode,
-                previousMode: previousClosedLidMode,
-                userInitiated: false,
+          if newClosedLidMode.keepsAwake, !state.powerHelperStatus.isReady {
+            state.$config.withLock {
+              $0.closedLidMode = .off
+              $0.caffeinatePausesAutoLock = false
+            }
+            state.appliedClosedLidMode = .off
+          } else {
+            state.appliedClosedLidMode = newClosedLidMode
+            if
+              !previousClosedLidMode.keepsAwake
+              || !newClosedLidMode.keepsAwake
+              || state.closedLidStatus != .active
+            {
+              state.isApplyingClosedLidMode = true
+              effects.append(
+                applyClosedLidMode(
+                  newClosedLidMode,
+                  previousMode: previousClosedLidMode,
+                  userInitiated: false,
+                )
               )
-            )
+            }
           }
         }
 
@@ -1057,6 +1254,7 @@ struct AppFeature {
   ) -> Effect<Action> {
     let previousMode = state.config.closedLidMode
     guard mode != previousMode else { return .none }
+    guard !mode.keepsAwake || state.powerHelperStatus.isReady else { return .none }
     state.$config.withLock {
       $0.closedLidMode = mode
       if let caffeinatePausesAutoLock {
@@ -1099,13 +1297,32 @@ struct AppFeature {
     return transitionClosedLidMode(mode, in: &state)
   }
 
+  private func resetUnavailableCaffeinate(in state: inout State) -> Effect<Action> {
+    guard
+      state.config.closedLidMode.keepsAwake
+      || state.config.caffeinatePausesAutoLock
+      || state.isApplyingClosedLidMode
+    else { return .none }
+    state.$config.withLock {
+      $0.closedLidMode = .off
+      $0.caffeinatePausesAutoLock = false
+    }
+    state.appliedClosedLidMode = .off
+    state.closedLidStatus = .inactive
+    state.isApplyingClosedLidMode = false
+    return .merge(
+      .cancel(id: CancelID.closedLidApply),
+      resolve(.closedLidPower, in: &state),
+    )
+  }
+
   private func applyClosedLidMode(
     _ mode: ClosedLidMode,
     previousMode: ClosedLidMode,
     userInitiated: Bool,
   ) -> Effect<Action> {
     .run { send in
-      let status = await closedLidControl.setEnabled(mode.keepsAwake, userInitiated)
+      let status = await closedLidControl.setEnabled(mode.keepsAwake)
       await send(
         .closedLidApplyResponse(
           requestedMode: mode,

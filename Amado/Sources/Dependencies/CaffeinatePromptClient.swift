@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 PangMo5 and contributors
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import AppKit
 import Dependencies
 import DependenciesMacros
@@ -19,6 +22,7 @@ enum CaffeinateAutoLockPauseChoice: Equatable, Sendable {
 struct CaffeinatePromptClient: Sendable {
   var confirmSafety: @Sendable () async -> Bool = { false }
   var askAutoLockPause: @Sendable () async -> CaffeinateAutoLockPauseChoice = { .cancel }
+  var confirmHelperRemoval: @Sendable () async -> Bool = { false }
 }
 
 // MARK: DependencyKey
@@ -60,6 +64,22 @@ extension CaffeinatePromptClient: DependencyKey {
         case .alertSecondButtonReturn: return .keepAutoLockOn
         default: return .cancel
         }
+      }
+    },
+    confirmHelperRemoval: {
+      await MainActor.run {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Remove the Power Helper?"
+        alert.informativeText = """
+          Caffeinate will be turned off and normal lid-close sleep will be restored. To use Caffeinate again, install the Power Helper explicitly from Caffeinate Settings; macOS may require administrator approval.
+          """
+        alert.addButton(withTitle: "Remove Power Helper")
+        let cancelButton = alert.addButton(withTitle: "Cancel")
+        cancelButton.keyEquivalent = "\u{1b}"
+        NSApp.activate(ignoringOtherApps: true)
+
+        return alert.runModal() == .alertFirstButtonReturn
       }
     },
   )

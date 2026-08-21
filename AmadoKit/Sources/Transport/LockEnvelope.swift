@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 PangMo5 and contributors
+// SPDX-License-Identifier: MPL-2.0
+
 import Foundation
 
 /// What actually travels on the wire: a protocol-versioned wrapper around the

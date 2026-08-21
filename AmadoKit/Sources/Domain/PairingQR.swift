@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 PangMo5 and contributors
+// SPDX-License-Identifier: MPL-2.0
+
 #if canImport(CoreImage) && !os(watchOS)
 import CoreGraphics
 import CoreImage

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 PangMo5 and contributors
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import ComposableArchitecture
 import Foundation
 import Sharing
@@ -17,8 +20,8 @@ struct ClosedLidModeTests {
   func `enabling persists intent and reports the active helper`() async {
     let recorder = ClosedLidRecorder()
     let store = makeStore(recorder)
-    store.dependencies.closedLidControl.setEnabled = { enabled, registerIfNeeded in
-      await recorder.applied(enabled: enabled, registerIfNeeded: registerIfNeeded)
+    store.dependencies.closedLidControl.setEnabled = { enabled in
+      await recorder.applied(enabled: enabled)
       return .active
     }
 
@@ -34,7 +37,7 @@ struct ClosedLidModeTests {
     }
 
     await store.finish()
-    #expect(await recorder.applies == [.init(enabled: true, registerIfNeeded: true)])
+    #expect(await recorder.applies == [.init(enabled: true)])
   }
 
   @Test
@@ -49,6 +52,206 @@ struct ClosedLidModeTests {
     #expect(store.state.config.closedLidMode == .off)
     await store.finish()
     #expect(await recorder.applies.isEmpty)
+  }
+
+  @Test
+  func `awake policy is ignored until the Power Helper is installed`() async {
+    let recorder = ClosedLidRecorder()
+    let store = makeStore(recorder) {
+      $0.powerHelperStatus = .notInstalled
+    }
+
+    await store.send(.closedLidModeChanged(.lock))
+
+    #expect(store.state.config.closedLidMode == .off)
+    await store.finish()
+    #expect(await recorder.applies.isEmpty)
+  }
+
+  @Test
+  func `missing Power Helper resets a persisted awake policy`() async {
+    let recorder = ClosedLidRecorder()
+    let store = makeStore(recorder) {
+      $0.$config.withLock {
+        $0.closedLidMode = .lock
+        $0.caffeinatePausesAutoLock = true
+      }
+      $0.appliedClosedLidMode = .lock
+      $0.powerHelperStatus = .checking
+    }
+
+    await store.send(.caffeinateHelperStatusResponse(.notInstalled)) {
+      $0.$config.withLock {
+        $0.closedLidMode = .off
+        $0.caffeinatePausesAutoLock = false
+      }
+      $0.appliedClosedLidMode = .off
+      $0.powerHelperStatus = .notInstalled
+    }
+
+    await store.finish()
+    #expect(await recorder.applies.isEmpty)
+  }
+
+  @Test
+  func `installed Power Helper restores a persisted awake policy`() async {
+    let recorder = ClosedLidRecorder()
+    let store = makeStore(recorder) {
+      $0.$config.withLock { $0.closedLidMode = .lock }
+      $0.appliedClosedLidMode = .lock
+      $0.powerHelperStatus = .checking
+    }
+
+    await store.send(.caffeinateHelperStatusResponse(.installed(.current))) {
+      $0.powerHelperStatus = .installed(.current)
+      $0.isApplyingClosedLidMode = true
+    }
+    await store.receive(\.closedLidApplyResponse) {
+      $0.closedLidStatus = .active
+      $0.isApplyingClosedLidMode = false
+    }
+
+    await store.finish()
+    #expect(await recorder.applies == [.init(enabled: true)])
+  }
+
+  @Test
+  func `installing the Power Helper is an explicit action`() async {
+    let recorder = ClosedLidRecorder()
+    let store = makeStore(recorder) {
+      $0.powerHelperStatus = .notInstalled
+    }
+
+    await store.send(.caffeinateInstallHelperTapped) {
+      $0.isInstallingPowerHelper = true
+    }
+    await store.receive(\.caffeinateInstallHelperResponse) {
+      $0.powerHelperStatus = .installed(.current)
+      $0.isInstallingPowerHelper = false
+    }
+
+    await store.finish()
+    #expect(await recorder.helperInstallCount == 1)
+  }
+
+  @Test
+  func `Power Helper removal is ignored when it is not installed`() async {
+    let recorder = ClosedLidRecorder()
+    let store = makeStore(recorder) {
+      $0.powerHelperStatus = .notInstalled
+    }
+
+    await store.send(.caffeinateRemoveHelperTapped)
+
+    await store.finish()
+    #expect(await recorder.helperRemovalCount == 0)
+  }
+
+  @Test
+  func `cancelling Power Helper removal preserves Caffeinate`() async {
+    let recorder = ClosedLidRecorder()
+    let store = makeStore(recorder) {
+      $0.$config.withLock { $0.closedLidMode = .lock }
+      $0.appliedClosedLidMode = .lock
+      $0.closedLidStatus = .active
+    }
+    store.dependencies.caffeinatePrompt.confirmHelperRemoval = { false }
+
+    await store.send(.caffeinateRemoveHelperTapped)
+    await store.receive(\.caffeinateRemoveHelperConfirmationFinished)
+
+    #expect(store.state.config.closedLidMode == .lock)
+    #expect(store.state.closedLidStatus == .active)
+    await store.finish()
+    #expect(await recorder.helperRemovalCount == 0)
+  }
+
+  @Test
+  func `removing Power Helper turns off Caffeinate and its auto-lock pause`() async {
+    let recorder = ClosedLidRecorder()
+    let store = makeStore(recorder) {
+      $0.$config.withLock {
+        $0.closedLidMode = .unlocked
+        $0.caffeinatePausesAutoLock = true
+      }
+      $0.appliedClosedLidMode = .unlocked
+      $0.closedLidStatus = .active
+    }
+    store.dependencies.caffeinatePrompt.confirmHelperRemoval = { true }
+
+    await store.send(.caffeinateRemoveHelperTapped)
+    await store.receive(\.caffeinateRemoveHelperConfirmationFinished) {
+      $0.$config.withLock {
+        $0.closedLidMode = .off
+        $0.caffeinatePausesAutoLock = false
+      }
+      $0.appliedClosedLidMode = .off
+      $0.isRemovingPowerHelper = true
+    }
+    await store.receive(\.caffeinateRemoveHelperResponse) {
+      $0.closedLidStatus = .inactive
+      $0.powerHelperStatus = .notInstalled
+      $0.isRemovingPowerHelper = false
+    }
+
+    await store.finish()
+    #expect(await recorder.helperRemovalCount == 1)
+  }
+
+  @Test
+  func `failed Power Helper removal restores the previous Caffeinate policy`() async {
+    let recorder = ClosedLidRecorder()
+    let store = makeStore(recorder) {
+      $0.$config.withLock {
+        $0.closedLidMode = .unlocked
+        $0.caffeinatePausesAutoLock = true
+      }
+      $0.appliedClosedLidMode = .unlocked
+      $0.closedLidStatus = .active
+    }
+    store.dependencies.caffeinatePrompt.confirmHelperRemoval = { true }
+    let (removalStatuses, removalStatusContinuation) =
+      AsyncStream<PowerHelperInstallationStatus>.makeStream()
+    store.dependencies.closedLidControl.removeHelper = {
+      await removalStatuses.first(where: { _ in true }) ?? .notInstalled
+    }
+
+    await store.send(.caffeinateRemoveHelperTapped)
+    await store.receive(\.caffeinateRemoveHelperConfirmationFinished) {
+      $0.$config.withLock {
+        $0.closedLidMode = .off
+        $0.caffeinatePausesAutoLock = false
+      }
+      $0.appliedClosedLidMode = .off
+      $0.isRemovingPowerHelper = true
+    }
+    removalStatusContinuation.yield(
+      .failed(reason: "The helper is still registered", isRegistered: true)
+    )
+    removalStatusContinuation.finish()
+    await store.receive(\.caffeinateRemoveHelperResponse) {
+      $0.$config.withLock {
+        $0.closedLidMode = .unlocked
+        $0.caffeinatePausesAutoLock = true
+      }
+      $0.appliedClosedLidMode = .unlocked
+      $0.powerHelperStatus = .failed(
+        reason: "The helper is still registered",
+        isRegistered: true,
+      )
+      $0.closedLidStatus = .failed(
+        "Power Helper removal did not finish: The helper is still registered"
+      )
+      $0.isRemovingPowerHelper = false
+      $0.issues = [
+        AgentIssue(
+          kind: .closedLidPower,
+          detail: "Unavailable: Power Helper removal did not finish: The helper is still registered",
+        )
+      ]
+    }
+
+    await store.finish()
   }
 
   @Test
@@ -84,7 +287,7 @@ struct ClosedLidModeTests {
 
     #expect(store.state.activeAutoLockPause == .whileCaffeinating)
     await store.finish()
-    #expect(await recorder.applies == [.init(enabled: true, registerIfNeeded: true)])
+    #expect(await recorder.applies == [.init(enabled: true)])
   }
 
   @Test
@@ -202,7 +405,7 @@ struct ClosedLidModeTests {
     }
 
     await store.finish()
-    #expect(await recorder.applies == [.init(enabled: true, registerIfNeeded: false)])
+    #expect(await recorder.applies == [.init(enabled: true)])
   }
 
   @Test
@@ -214,7 +417,7 @@ struct ClosedLidModeTests {
       $0.appliedClosedLidMode = .unlocked
       $0.closedLidStatus = .active
     }
-    store.dependencies.closedLidControl.setEnabled = { _, _ in failure }
+    store.dependencies.closedLidControl.setEnabled = { _ in failure }
 
     await store.send(.closedLidModeChanged(.off)) {
       $0.$config.withLock { $0.closedLidMode = .off }
@@ -374,7 +577,7 @@ struct ClosedLidModeTests {
   func `helper approval is visible and opens Login Items settings`() async {
     let recorder = ClosedLidRecorder()
     let store = makeStore(recorder)
-    store.dependencies.closedLidControl.setEnabled = { _, _ in .requiresApproval }
+    store.dependencies.closedLidControl.setEnabled = { _ in .requiresApproval }
     store.dependencies.closedLidControl.openHelperSettings = { await recorder.openedSettings() }
 
     await store.send(.closedLidModeChanged(.lock))
@@ -385,6 +588,7 @@ struct ClosedLidModeTests {
     }
     await store.receive(\.closedLidApplyResponse) {
       $0.closedLidStatus = .requiresApproval
+      $0.powerHelperStatus = .requiresApproval
       $0.isApplyingClosedLidMode = false
       $0.issues = [
         AgentIssue(
@@ -415,6 +619,7 @@ struct ClosedLidModeTests {
       $0.uuid = .constant(Self.eventID)
     } operation: {
       var state = AppFeature.State()
+      state.powerHelperStatus = .installed(.current)
       configure(&state)
       let store = TestStore(initialState: state) {
         AppFeature()
@@ -425,10 +630,13 @@ struct ClosedLidModeTests {
       )
       store.dependencies.caffeinatePrompt.confirmSafety = { true }
       store.dependencies.closedLidControl = ClosedLidControlClient(
-        setEnabled: { enabled, registerIfNeeded in
-          await recorder.applied(enabled: enabled, registerIfNeeded: registerIfNeeded)
+        setEnabled: { enabled in
+          await recorder.applied(enabled: enabled)
           return enabled ? .active : .inactive
         },
+        helperStatus: { .installed(.current) },
+        installHelper: { await recorder.installedHelper() },
+        removeHelper: { await recorder.removedHelper() },
         openHelperSettings: { await recorder.openedSettings() },
         setBuiltinDisplayDimmed: { dimmed in await recorder.setDisplayDimmed(dimmed) },
         sleepDisplays: { await recorder.sleptDisplays() },
@@ -446,16 +654,17 @@ struct ClosedLidModeTests {
 private actor ClosedLidRecorder {
   struct Apply: Equatable, Sendable {
     let enabled: Bool
-    let registerIfNeeded: Bool
   }
 
   private(set) var applies = [Apply]()
   private(set) var displayDimmingStates = [Bool]()
   private(set) var displaySleepCount = 0
+  private(set) var helperInstallCount = 0
+  private(set) var helperRemovalCount = 0
   private(set) var settingsOpenCount = 0
 
-  func applied(enabled: Bool, registerIfNeeded: Bool) {
-    applies.append(Apply(enabled: enabled, registerIfNeeded: registerIfNeeded))
+  func applied(enabled: Bool) {
+    applies.append(Apply(enabled: enabled))
   }
 
   func setDisplayDimmed(_ dimmed: Bool) -> BuiltinDisplayDimmingResult {
@@ -466,6 +675,16 @@ private actor ClosedLidRecorder {
   func sleptDisplays() -> DisplaySleepResult {
     displaySleepCount += 1
     return .applied
+  }
+
+  func removedHelper() -> PowerHelperInstallationStatus {
+    helperRemovalCount += 1
+    return .notInstalled
+  }
+
+  func installedHelper() -> PowerHelperInstallationStatus {
+    helperInstallCount += 1
+    return .installed(.current)
   }
 
   func openedSettings() {

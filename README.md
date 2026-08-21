@@ -6,7 +6,7 @@
 ![macOS 15+](https://img.shields.io/badge/macOS-15%2B-blue)
 ![iOS 18+](https://img.shields.io/badge/iOS-18%2B-blue)
 ![watchOS 11+](https://img.shields.io/badge/watchOS-11%2B-blue)
-[![License: MPL-2.0](https://img.shields.io/badge/License-MPL%202.0-brightgreen)](LICENSE)
+[![License: AGPL-3.0-only](https://img.shields.io/badge/License-AGPL%203.0--only-blue)](LICENSE)
 
 One tap. Walk away. Close the lid.
 
@@ -25,6 +25,7 @@ Caffeinate.
 - **Caffeinate when you close the lid:** Keep a MacBook running closed with a
   user-approved Power Helper. Choose whether the login session locks, or keep
   it explicitly unlocked when physical and remote access are already controlled.
+  Awake policies become available only after the current helper is installed.
 - **Verified feedback:** Each one-tap control tells you whether the Mac was
   already locked, became locked, or accepted the request without confirming
   the state transition. Control Center uses native momentary status text, while
@@ -103,8 +104,9 @@ iPhone app, widget, and Watch app are distributed together through TestFlight.
 3. In the iPhone app, scan the QR code.
 4. Use the app, widget, Control Center control, or Watch app to lock the Mac.
 5. Optionally enable **Auto-lock** so leaving with the iPhone locks it for you.
-6. Optionally set **Caffeinate** to an awake mode and approve Amado's Power
-   Helper once in **Login Items & Extensions**.
+6. Optionally open **Caffeinate**, explicitly install and approve the Power
+   Helper, wait for its status to become **Installed**, then choose an awake
+   policy.
 
 ## Configuration
 
@@ -151,7 +153,11 @@ open Amado.xcworkspace
 
 ## License
 
-[Mozilla Public License 2.0](LICENSE). MPL-2.0 is file-level copyleft: changes
-to MPL-covered files remain under MPL-2.0, while new files may use another
-compatible license. Executable distribution is allowed as long as recipients
-can access the covered source.
+The macOS app, Power Helper, tests, tooling, documentation, and website are
+licensed under [GNU Affero General Public License v3.0 only](LICENSE)
+(`AGPL-3.0-only`). Copyright (C) 2026 PangMo5.
+
+The iPhone, Apple Watch, Widget, and shared `AmadoKit` sources remain under the
+[Mozilla Public License 2.0](LICENSES/MPL-2.0.txt) (`MPL-2.0`). See
+[NOTICE.md](NOTICE.md) and `REUSE.toml` for the exact path-level boundary.
+Third-party components remain under their respective upstream licenses.

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 PangMo5 and contributors
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import AppKit
 import ComposableArchitecture
 import SwiftUI
@@ -39,13 +42,26 @@ struct MenuBarContentView: View {
         ),
       ) {
         ForEach(ClosedLidMode.allCases, id: \.self) { mode in
-          Text(mode.title).tag(mode)
+          Text(mode.title)
+            .tag(mode)
+        }
+      }
+      .disabled(!store.powerHelperStatus.isReady)
+      if store.isInstallingPowerHelper {
+        Text("Installing Power Helper…")
+      } else if store.powerHelperStatus.canInstall {
+        Button("\(store.powerHelperStatus.installButtonTitle)…") {
+          store.send(.caffeinateInstallHelperTapped)
+        }
+      } else if store.powerHelperStatus == .requiresApproval {
+        Button("Approve Power Helper…") {
+          store.send(.caffeinateHelperSettingsTapped)
         }
       }
       if store.config.closedLidMode.keepsAwake {
         if store.isApplyingClosedLidMode {
           Text("Starting Caffeinate…")
-        } else {
+        } else if !isClosedLidPowerIssueAlreadyPresented {
           Text(store.closedLidStatus.summary)
         }
         Label(
@@ -109,6 +125,13 @@ struct MenuBarContentView: View {
   }
 
   // MARK: Private
+
+  /// The issue banner immediately above the controls already owns both the
+  /// failure detail and its recovery action. Keep the Caffeinate picker, but
+  /// do not repeat the same status as a second disabled menu row.
+  private var isClosedLidPowerIssueAlreadyPresented: Bool {
+    store.issues.first?.kind == .closedLidPower
+  }
 
   private var headline: String {
     switch store.health {

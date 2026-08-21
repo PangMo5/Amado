@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 PangMo5 and contributors
+// SPDX-License-Identifier: MPL-2.0
+
 import Foundation
 @preconcurrency import Network
 

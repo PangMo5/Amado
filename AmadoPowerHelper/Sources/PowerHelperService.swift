@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 PangMo5 and contributors
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import Foundation
 
 // MARK: - RootPowerController
@@ -87,6 +90,13 @@ private final class PowerHelperService: NSObject, PowerHelperProtocol, @unchecke
   }
 
   // MARK: Internal
+
+  func getBuild(
+    withReply reply: @escaping @Sendable (_ version: String, _ build: String) -> Void
+  ) {
+    let build = PowerHelperBuild.current
+    reply(build.version, build.build)
+  }
 
   func setClosedLidMode(
     _ enabled: Bool,
