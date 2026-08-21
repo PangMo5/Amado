@@ -25,7 +25,9 @@ Service Management and is not part of this file either.
 
 ```toml
 mac_id = "00000000-0000-0000-0000-000000000000"
+caffeinate_mode = "off"
 proximity_auto_lock = false
+caffeinate_pauses_auto_lock = false
 # proximity_pause_until is omitted unless auto-lock is temporarily paused
 proximity_device_id = ""
 proximity_device_name = ""
@@ -47,7 +49,9 @@ configuration.
 | --- | --- | ---: | --- |
 | `mac_id` | String | generated once | Stable UUID shared with paired clients. Do not copy another Mac's value. |
 | `remote_host` | String | `""` | Public hostname of a user-operated HTTPS tunnel. Do not include `https://` or a path. Empty means LAN-only. |
+| `caffeinate_mode` | String | `"off"` | Caffeinate behavior: `"off"` sleeps normally, `"lock"` stays awake and locks the login session, and `"unlocked"` stays awake without locking. Awake modes require one-time approval of Amado's Power Helper. |
 | `proximity_auto_lock` | Boolean | `false` | Enables walk-away locking using the selected iPhone's Bluetooth signal. |
+| `caffeinate_pauses_auto_lock` | Boolean | `false` | Pauses proximity Auto-lock while Caffeinate is set to `"unlocked"`. The setting is ignored in `"off"` and `"lock"` modes. |
 | `proximity_pause_until` | Number | omitted | Unix timestamp at which a temporary auto-lock pause ends. Prefer setting this from the menu bar or Settings. The key is removed when auto-lock resumes. |
 | `proximity_device_id` | String | `""` | Core Bluetooth UUID of the selected device. Prefer selecting it in Settings. |
 | `proximity_device_name` | String | `""` | Cached display name used by the Settings UI. |
@@ -69,6 +73,20 @@ gradual departure cannot move the reference indefinitely.
 Pausing auto-lock keeps `proximity_auto_lock` enabled but stops proximity
 monitoring until `proximity_pause_until`. Amado clears an expired deadline and
 starts monitoring again automatically, including after an app restart.
+
+`caffeinate_pauses_auto_lock` is a policy-bound pause rather than a deadline.
+It stops monitoring only while `caffeinate_mode = "unlocked"` and ends as soon
+as Caffeinate changes to another mode.
+
+`caffeinate_mode` is the desired policy, while the live helper status in
+Settings is the source of truth for whether an awake mode's privileged
+override is actually active. See [Caffeinate](CAFFEINATE.md) for
+approval, locking, and safety behavior.
+
+Setting `caffeinate_mode` to `"lock"` or `"unlocked"` by editing this file
+bypasses the interactive safety confirmation, but not the operational risks or
+the user's responsibility. Keep the Mac on a hard, stable, well-ventilated
+surface; never run it closed in a bag, bedding, or another enclosed space.
 
 ## Reload behavior
 

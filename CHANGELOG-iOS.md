@@ -4,6 +4,8 @@ Notable changes to the Amado iPhone, Apple Watch, widget, and Control Center cli
 
 ## Unreleased
 
+- **Actionable failures:** Lock and status failures remain visible in the app with a retry action instead of disappearing as transient feedback.
+- **Clear agent results:** Authenticated responses distinguish confirmed lock state from requests that reached the Mac but could not observe the final transition.
 - **Stable iPhone identity:** Each installation now has a non-editable short label derived from its stable UUID, avoiding reliance on restricted system device names.
 - **Synced Mac names:** Paired Mac names and stable identities now refresh from authenticated responses without breaking existing Widget, Control Center, or Watch selections.
 - **Two-way pairing removal:** Removing a pairing on either device is reflected on the other the next time they connect.

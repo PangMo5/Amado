@@ -1,6 +1,6 @@
 # Privacy
 
-Last updated: July 28, 2026
+Last updated: August 22, 2026
 
 Amado does not collect personal data, use analytics or advertising SDKs, track
 you across apps or websites, or operate a hosted relay service.
@@ -20,7 +20,8 @@ you across apps or websites, or operate a hosted relay service.
   system surface can redraw. It is not an activity history and is ignored after
   five minutes.
 - **Configuration:** The Mac stores non-sensitive settings locally in
-  `config.toml`.
+  `config.toml`, including the selected Caffeinate policy and whether its
+  unlocked policy pauses proximity Auto-lock.
 - **Developer access:** PangMo5 does not receive this data.
 
 Removing a paired Mac from the iPhone app deletes its active local pairing data
@@ -51,6 +52,14 @@ iPhone's Bluetooth signal to decide when to lock. Keyboard, pointer, and
 trackpad activity is not observed or used by proximity auto-lock. Amado does
 not use location services, collect a location history, persist proximity
 observations, or send Bluetooth observations to PangMo5.
+
+## Caffeinate
+
+Caffeinate runs locally on the Mac. Its Power Helper receives only an on/off
+sleep-override lease from the expected Amado app; it does not receive pairing
+data, network commands, document contents, or user activity. Amado does not
+collect or upload lid state, display brightness, temperature, battery level,
+or Caffeinate usage.
 
 ## Camera
 

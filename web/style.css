@@ -111,6 +111,9 @@ h2 { font-size: clamp(34px, 5vw, 56px); font-weight: 620; line-height: 1.07; let
 .feature .ico { margin-bottom: 14px; font-size: 30px; }
 .feature h3 { font-size: 22px; font-weight: 600; letter-spacing: -0.01em; }
 .feature p { margin-top: 8px; color: var(--text-secondary); font-size: 16px; line-height: 1.42; }
+.section-dark .feature { color: #f5f5f7; background: rgba(255, 255, 255, .07); border-color: rgba(255, 255, 255, .12); box-shadow: none; }
+.section-dark .feature p { color: #a1a1a6; }
+.safety-note { max-width: 780px; margin: 34px auto 0; color: #a1a1a6; font-size: 15px; line-height: 1.55; }
 
 .showcase { padding: 28px 22px 100px; }
 .relay {

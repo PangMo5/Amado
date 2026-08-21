@@ -8,29 +8,37 @@
 ![watchOS 11+](https://img.shields.io/badge/watchOS-11%2B-blue)
 [![License: MPL-2.0](https://img.shields.io/badge/License-MPL%202.0-brightgreen)](LICENSE)
 
-Lock your Mac with one tap, or just walk away.
+One tap. Walk away. Close the lid.
 
 *Amado* (雨戸) are the sliding shutters that close a Japanese house. One tap
-closes your Mac the same way. Walk away with your iPhone and Amado can close it
-automatically.
+closes your Mac the same way. Amado can also lock automatically when you leave,
+or keep a MacBook working with its lid closed when you explicitly enable
+Caffeinate.
 
 ## Features
 
 - **One tap, everywhere:** Lock from the iPhone app, Apple Watch, a Home
   Screen widget, or Control Center.
+- **Automatic when you leave:** Bluetooth proximity lets the Mac lock itself
+  when you walk away with your iPhone. Smart detection is the default; Manual
+  mode keeps direct RSSI, delay, and smoothing controls.
+- **Caffeinate when you close the lid:** Keep a MacBook running closed with a
+  user-approved Power Helper. Choose whether the login session locks, or keep
+  it explicitly unlocked when physical and remote access are already controlled.
 - **Verified feedback:** Each one-tap control tells you whether the Mac was
   already locked, became locked, or accepted the request without confirming
   the state transition. Control Center uses native momentary status text, while
   the Home Screen widget updates its own icon and message and can refresh the
   Mac's current status on demand.
-- **Automatic when you leave:** Bluetooth proximity lets the Mac lock itself
-  when you walk away with your iPhone. Smart detection is the default; Manual
-  mode keeps direct RSSI, delay, and smoothing controls. Smart keeps a
-  conservative rolling nearby reference so a momentarily stronger reading
-  cannot make ordinary desk-range fading look like departure.
+- **Conservative Smart detection:** The rolling nearby reference cannot be
+  tightened by a momentarily stronger reading, so ordinary desk-range fading
+  is less likely to look like departure.
 - **Pause when you need it:** Suspend proximity auto-lock for 15 minutes to
   four hours, or choose an exact resume time. The pause survives a relaunch and
   ends automatically without turning auto-lock off.
+- **Visible, self-healing agent:** Service, Bluetooth, login, persistence, and
+  screen-lock failures surface in the menu bar, Settings, and notifications.
+  Recoverable listeners retry instead of failing silently.
 - **Fast on your LAN:** Bonjour discovery and a direct authenticated command,
   with no account or hosted service.
 - **Remote when you choose:** Bring your own HTTPS tunnel. Amado never proxies
@@ -40,6 +48,16 @@ automatically.
 - **Stable device identity:** Macs use the name supplied by macOS, while each
   iPhone installation gets a short stable label derived from its UUID.
 
+> [!WARNING]
+> Caffeinate deliberately prevents normal lid-close sleep. A closed Mac can
+> consume battery and trap heat: keep it on a hard, stable, well-ventilated
+> surface and never leave it running in a bag, bedding, or another enclosed
+> space. You are responsible for monitoring the Mac and disabling Caffeinate
+> if conditions become unsafe. To the extent permitted by law, Amado and its
+> contributors are not liable for resulting battery depletion, data loss,
+> hardware damage, or injury. Follow [Apple's temperature and ventilation
+> guidance](https://support.apple.com/102336).
+
 ## How it works
 
 ```text
@@ -47,6 +65,7 @@ Apple Watch ── WatchConnectivity ──▶ iPhone ─┬─ Bonjour + TCP �
 Widget / Control Center / iPhone app ────────┤
                                              └─ HTTPS tunnel ───────▶ Mac
 Nearby iPhone ───────── Bluetooth proximity ────────────────────────▶ Mac
+MacBook lid ─────────── Caffeinate + Power Helper ─────────▶ Mac stays awake
 ```
 
 The iPhone client tries the local network first and uses the paired Mac's
@@ -59,6 +78,10 @@ and does not require the iPhone app to stay open. The Mac also keeps a local
 list of paired iPhones. Removing a pairing from either side is synchronized the
 next time the devices connect. Stable UUIDs identify each installation
 independently of its displayed name.
+
+Caffeinate is local to the Mac. A narrowly scoped, code-signing-pinned Power
+Helper holds the system sleep override only while the Amado app keeps its XPC
+lease alive. It is not exposed through the pairing or remote-lock protocol.
 
 See [Security](docs/SECURITY.md) for the trust model and protocol boundaries.
 
@@ -80,6 +103,8 @@ iPhone app, widget, and Watch app are distributed together through TestFlight.
 3. In the iPhone app, scan the QR code.
 4. Use the app, widget, Control Center control, or Watch app to lock the Mac.
 5. Optionally enable **Auto-lock** so leaving with the iPhone locks it for you.
+6. Optionally set **Caffeinate** to an awake mode and approve Amado's Power
+   Helper once in **Login Items & Extensions**.
 
 ## Configuration
 
@@ -91,7 +116,9 @@ reloaded when the file changes. Pairing secrets stay in Keychain.
 | --- | ---: | --- |
 | `mac_id` | generated once | Stable Mac identity shared with paired clients |
 | `remote_host` | `""` | Public hostname of your HTTPS tunnel. Empty is LAN-only. |
+| `caffeinate_mode` | `"off"` | `"off"`, `"lock"`, or `"unlocked"` behavior when the lid closes |
 | `proximity_auto_lock` | `false` | Lock when the selected iPhone leaves |
+| `caffeinate_pauses_auto_lock` | `false` | Pause Auto-lock while Caffeinate keeps the Mac unlocked |
 | `proximity_pause_until` | omitted | Unix timestamp when a temporary pause ends |
 | `proximity_mode` | `"smart"` | Adaptive detection, or `"manual"` for direct RSSI controls |
 | `proximity_sensitivity` | `"balanced"` | Smart-mode reaction preset |
@@ -101,7 +128,8 @@ reloaded when the file changes. Pairing secrets stay in Keychain.
 
 See the complete [`config.toml` reference](docs/CONFIGURATION.md),
 [pairing guide](docs/PAIRING.md), [remote access guide](docs/REMOTE_ACCESS.md),
-and [proximity auto-lock guide](docs/PROXIMITY_AUTO_LOCK.md).
+[proximity auto-lock guide](docs/PROXIMITY_AUTO_LOCK.md), and
+[Caffeinate guide](docs/CAFFEINATE.md).
 
 ## Build from source
 

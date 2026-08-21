@@ -35,6 +35,138 @@ struct AgentHealthTests {
   }
 
   @Test
+  func `closed-lid awake mode becomes the healthy menu bar state`() async {
+    let store = makeStore(NotificationRecorder()) {
+      $0.$config.withLock { $0.closedLidMode = .lock }
+      $0.closedLidStatus = .active
+      $0.isListening = true
+    }
+
+    #expect(
+      store.state.health == .closedLidAwake(
+        policy: .lockOnClose,
+        autoLockPause: nil,
+      )
+    )
+
+    await store.send(.lanListenerStateChanged(.unavailable(reason: "Port busy"))) {
+      $0.isListening = false
+      $0.issues = [AgentIssue(kind: .lanListener, detail: "Port busy")]
+    }
+    #expect(store.state.health == .impaired(AgentIssue(kind: .lanListener, detail: "Port busy")))
+
+    await store.finish()
+  }
+
+  @Test
+  func `closed-lid health preserves lock policy and auto-lock pause`() async {
+    let deadline = Date(timeIntervalSince1970: 2_000)
+    let lockedStore = makeStore(NotificationRecorder()) {
+      $0.$config.withLock {
+        $0.closedLidMode = .lock
+        $0.proximityAutoLock = true
+        $0.proximityDeviceID = UUID().uuidString
+        $0.proximityPauseUntil = deadline.timeIntervalSince1970
+      }
+      $0.closedLidStatus = .active
+      $0.isListening = true
+    }
+    let unlockedStore = makeStore(NotificationRecorder()) {
+      $0.$config.withLock {
+        $0.closedLidMode = .unlocked
+        $0.proximityAutoLock = true
+        $0.proximityDeviceID = UUID().uuidString
+        $0.proximityPauseUntil = deadline.timeIntervalSince1970
+      }
+      $0.closedLidStatus = .active
+      $0.isListening = true
+    }
+
+    #expect(
+      lockedStore.state.health == .closedLidAwake(
+        policy: .lockOnClose,
+        autoLockPause: .until(deadline),
+      )
+    )
+    #expect(
+      unlockedStore.state.health == .closedLidAwake(
+        policy: .keepUnlocked,
+        autoLockPause: .until(deadline),
+      )
+    )
+
+    await lockedStore.finish()
+    await unlockedStore.finish()
+  }
+
+  @Test
+  func `menu bar indicator keeps auto-lock closed-lid and pause meanings independent`() async {
+    let deadline = Date(timeIntervalSince1970: 2_000)
+
+    for isAutoLockEnabled in [false, true] {
+      for closedLidMode in ClosedLidMode.allCases {
+        for isPauseConfigured in [false, true] {
+          for caffeinatePausesAutoLock in [false, true] {
+            let store = makeStore(NotificationRecorder()) {
+              $0.$config.withLock {
+                $0.closedLidMode = closedLidMode
+                $0.proximityAutoLock = isAutoLockEnabled
+                $0.proximityDeviceID = UUID().uuidString
+                $0.caffeinatePausesAutoLock = caffeinatePausesAutoLock
+                $0.proximityPauseUntil = isPauseConfigured
+                  ? deadline.timeIntervalSince1970
+                  : nil
+              }
+              $0.closedLidStatus = closedLidMode == .off ? .inactive : .active
+            }
+
+            #expect(
+              store.state.menuBarIndicator == MenuBarIndicatorState(
+                isAutoLockEnabled: isAutoLockEnabled,
+                closedLidPolicy: closedLidMode.awakePolicy,
+                isAutoLockPaused: isAutoLockEnabled
+                  && (
+                    isPauseConfigured
+                      || (closedLidMode == .unlocked && caffeinatePausesAutoLock)
+                  ),
+                needsAttention: false,
+              )
+            )
+
+            await store.finish()
+          }
+        }
+      }
+    }
+  }
+
+  @Test
+  func `attention marker does not replace the other menu bar meanings`() async {
+    let deadline = Date(timeIntervalSince1970: 2_000)
+    let store = makeStore(NotificationRecorder()) {
+      $0.$config.withLock {
+        $0.closedLidMode = .unlocked
+        $0.proximityAutoLock = true
+        $0.proximityDeviceID = UUID().uuidString
+        $0.proximityPauseUntil = deadline.timeIntervalSince1970
+      }
+      $0.closedLidStatus = .active
+      $0.issues = [AgentIssue(kind: .lanListener, detail: "Port busy")]
+    }
+
+    #expect(
+      store.state.menuBarIndicator == MenuBarIndicatorState(
+        isAutoLockEnabled: true,
+        closedLidPolicy: .keepUnlocked,
+        isAutoLockPaused: true,
+        needsAttention: true,
+      )
+    )
+
+    await store.finish()
+  }
+
+  @Test
   func `a retrying listener notifies once, not once per attempt`() async {
     let notifications = NotificationRecorder()
     let store = makeStore(notifications)
@@ -162,12 +294,17 @@ struct AgentHealthTests {
 
   // MARK: Private
 
-  private func makeStore(_ recorder: NotificationRecorder) -> TestStoreOf<AppFeature> {
+  private func makeStore(
+    _ recorder: NotificationRecorder,
+    updateState: (inout AppFeature.State) -> Void = { _ in },
+  ) -> TestStoreOf<AppFeature> {
     withDependencies {
       // Keep the shared config and pairing registry off the developer's disk.
       $0.defaultFileStorage = .inMemory
     } operation: {
-      let store = TestStore(initialState: AppFeature.State()) {
+      var state = AppFeature.State()
+      updateState(&state)
+      let store = TestStore(initialState: state) {
         AppFeature()
       }
       store.dependencies.notifier = NotifierClient(

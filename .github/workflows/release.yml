@@ -339,7 +339,7 @@ jobs:
 
               url "https://github.com/PangMo5/Amado/releases/download/v\#{version}/Amado-\#{version}.dmg"
               name "Amado"
-              desc "Lock your Mac with one tap or automatically when you walk away"
+              desc "Lock your Mac remotely, automatically, or keep it awake with the lid closed"
               homepage "https://github.com/PangMo5/Amado"
 
               auto_updates true
@@ -358,6 +358,7 @@ jobs:
           else
             sed -i.bak -E "s|^  version \".*\"|  version \"${VERSION}\"|" "$CASK"
             sed -i.bak -E "s|^  sha256 \".*\"|  sha256 \"${SHA}\"|" "$CASK"
+            sed -i.bak -E 's|^  desc ".*"|  desc "Lock your Mac remotely, automatically, or keep it awake with the lid closed"|' "$CASK"
             rm -f "${CASK}.bak"
           fi
           cd "$RUNNER_TEMP/tap"

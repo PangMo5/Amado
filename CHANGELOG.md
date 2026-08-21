@@ -2,6 +2,15 @@
 
 Notable changes to the Amado macOS app are documented here. Versions follow semantic versioning, and the newest release appears first.
 
+## Unreleased
+
+## 2.0.0 (2026-08-22)
+
+- **Caffeinate:** Keep a MacBook running after its lid closes with an explicit Off/Lock/Unlocked policy. The default awake policy locks the login session and sleeps the displays; the unlocked policy can pause proximity Auto-lock for as long as it remains selected.
+- **Narrow, fail-safe Power Helper:** The administrator-approved helper accepts only sleep-override leases from the expected, same-team Amado app. Disconnecting, quitting, crashing, or restarting the helper restores normal sleep instead of leaving a global override behind.
+- **Visible safety state:** Menu-bar icon layers independently show Auto-lock, Caffeinate's lock policy, and an active pause. Settings and the menu expose the saved policy separately from the live helper state, and awake modes retain heat, ventilation, battery, and physical-security warnings.
+- **Self-healing agent:** Listener, Bluetooth, login-item, persistence, and screen-lock failures now surface in the menu bar, Settings, and local notifications. Recoverable services retry automatically instead of leaving the agent silently unavailable.
+
 ## 1.0.3 (2026-08-03)
 
 - **Fixed the agent quitting on every command:** Answering a lock, status, pairing, or unpair request terminated the menu bar agent in optimized release builds, so the iPhone reported a failure and the Mac stopped responding until it was launched again. The one-shot response channel no longer races a timeout task to hand an answer back to the transport.
