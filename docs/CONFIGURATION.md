@@ -86,11 +86,14 @@ the privileged override is active. See [Caffeinate](CAFFEINATE.md) for
 installation, approval, locking, and safety behavior.
 
 Setting `caffeinate_mode` to `"lock"` or `"unlocked"` by editing this file
-bypasses the interactive safety confirmation only when the current Power Helper
-is already installed. It does not bypass helper availability, the operational
-risks, or the user's responsibility. Keep the Mac on a hard, stable,
-well-ventilated surface; never run it closed in a bag, bedding, or another
-enclosed space.
+bypasses the context-sensitive confirmation only when the current Power Helper
+is already installed. For `"unlocked"`, that means bypassing the combined
+operational, security, and Auto-lock choice dialog: anyone with physical
+access—or access through remote-control software already enabled on the Mac—may
+be able to use the session and access its data. File edits do not bypass helper
+availability, the operational risks, or the user's responsibility. Keep the
+Mac on a hard, stable, well-ventilated surface; never run it closed in a bag,
+bedding, or another enclosed space.
 
 ## Reload behavior
 

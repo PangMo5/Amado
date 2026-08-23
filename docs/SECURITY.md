@@ -69,7 +69,13 @@ a command; the pairing secret and valid HMAC are still required.
 The **Stay awake and lock** Caffeinate policy locks the session before
 requesting display sleep. Choosing **Stay awake, keep unlocked** is an explicit
 reduction in physical security: the Mac remains unlocked while it continues
-running.
+running. Amado requires one context-sensitive confirmation before applying
+this policy. When Auto-lock is enabled, its keep/pause choices appear as
+buttons in that same dialog. Anyone with physical access—or access through
+remote-control software already enabled on the Mac—may be able to use the
+session and access its apps, files, accounts, and data. Pausing proximity
+Auto-lock removes the additional lock that would otherwise occur when the
+selected iPhone leaves.
 
 ## Caffeinate operational safety
 

@@ -118,7 +118,7 @@ private enum MenuBarStatusImages {
         configuration: primaryConfiguration,
       ),
       closedLidPolicy: state.closedLidPolicy,
-      isPaused: state.isAutoLockPaused,
+      autoLockPause: state.autoLockPause,
       needsAttention: state.needsAttention,
     )
     cache[state] = image
@@ -142,7 +142,7 @@ private enum MenuBarStatusImages {
   private static func compose(
     primary: NSImage,
     closedLidPolicy: ClosedLidMode.AwakePolicy?,
-    isPaused: Bool,
+    autoLockPause: MenuBarPauseIndicator?,
     needsAttention: Bool,
   ) -> NSImage {
     let coffee = closedLidPolicy.map { _ in
@@ -154,9 +154,12 @@ private enum MenuBarStatusImages {
         configuration: detailConfiguration,
       )
     }
-    let clock = isPaused
-      ? configuredImage(.clockFill, configuration: detailConfiguration)
-      : nil
+    let pauseBadge = autoLockPause.map {
+      configuredImage(
+        $0 == .timed ? .clockFill : .pauseCircleFill,
+        configuration: detailConfiguration,
+      )
+    }
     let attention = needsAttention
       ? configuredImage(.exclamationmarkTriangleFill, configuration: attentionConfiguration)
       : nil
@@ -175,11 +178,11 @@ private enum MenuBarStatusImages {
       } else {
         0
       }
-    let clockOverflow = clock.map { $0.size.width * 0.28 } ?? 0
+    let pauseOverflow = pauseBadge.map { $0.size.width * 0.28 } ?? 0
     let canvasWidth = ceil(
       max(
         primaryImageMaxX,
-        primaryBadgeAnchorMaxX + max(closedLidOverflow, clockOverflow),
+        primaryBadgeAnchorMaxX + max(closedLidOverflow, pauseOverflow),
       )
     )
     let canvasSize = NSSize(width: canvasWidth, height: canvasHeight)
@@ -208,12 +211,12 @@ private enum MenuBarStatusImages {
         )
       }
 
-      if let clock {
+      if let pauseBadge {
         drawBadge(
-          clock,
+          pauseBadge,
           at: NSPoint(
-            x: primaryBadgeAnchorMaxX - clock.size.width * 0.72,
-            y: canvas.height - clock.size.height,
+            x: primaryBadgeAnchorMaxX - pauseBadge.size.width * 0.72,
+            y: canvas.height - pauseBadge.size.height,
           ),
           haloPadding: 0.5,
         )

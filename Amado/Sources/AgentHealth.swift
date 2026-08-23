@@ -171,6 +171,13 @@ enum AgentHealth: Equatable, Sendable {
   case impaired(AgentIssue)
 }
 
+// MARK: - MenuBarPauseIndicator
+
+enum MenuBarPauseIndicator: Equatable, Hashable, Sendable {
+  case timed
+  case whileCaffeinating
+}
+
 // MARK: - MenuBarIndicatorState
 
 /// Independent visual facts rendered by the menu bar icon. Each property owns
@@ -178,7 +185,7 @@ enum AgentHealth: Equatable, Sendable {
 struct MenuBarIndicatorState: Equatable, Hashable, Sendable {
   let isAutoLockEnabled: Bool
   let closedLidPolicy: ClosedLidMode.AwakePolicy?
-  let isAutoLockPaused: Bool
+  let autoLockPause: MenuBarPauseIndicator?
   let needsAttention: Bool
 }
 

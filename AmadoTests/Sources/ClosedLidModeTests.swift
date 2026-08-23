@@ -323,7 +323,7 @@ struct ClosedLidModeTests {
   }
 
   @Test
-  func `unlocked Caffeinate asks about auto-lock after the safety warning`() async {
+  func `unlocked Caffeinate combines operational security and auto-lock choices`() async {
     let recorder = ClosedLidRecorder()
     let store = makeStore(recorder) {
       $0.$config.withLock {
@@ -331,16 +331,15 @@ struct ClosedLidModeTests {
         $0.proximityDeviceID = Self.deviceID.uuidString
       }
     }
-    let (choices, choiceContinuation) = AsyncStream<CaffeinateAutoLockPauseChoice>.makeStream()
-    store.dependencies.caffeinatePrompt.askAutoLockPause = {
-      await choices.first(where: { _ in true }) ?? .cancel
+    let prompts = KeepUnlockedPromptRecorder(
+      choice: .keepUnlocked(pausingAutoLock: true)
+    )
+    store.dependencies.caffeinatePrompt.chooseKeepUnlocked = { includesSafety, autoLock in
+      await prompts.choose(includesOperationalSafety: includesSafety, autoLockEnabled: autoLock)
     }
 
     await store.send(.closedLidModeChanged(.unlocked))
-    await store.receive(\.caffeinateSafetyConfirmationFinished)
-    choiceContinuation.yield(.pause)
-    choiceContinuation.finish()
-    await store.receive(\.caffeinateAutoLockPauseChoiceSelected) {
+    await store.receive(\.caffeinateKeepUnlockedChoiceSelected) {
       $0.$config.withLock {
         $0.closedLidMode = .unlocked
         $0.caffeinatePausesAutoLock = true
@@ -355,6 +354,11 @@ struct ClosedLidModeTests {
 
     #expect(store.state.activeAutoLockPause == .whileCaffeinating)
     await store.finish()
+    #expect(
+      await prompts.requests == [
+        .init(includesOperationalSafety: true, autoLockEnabled: true)
+      ]
+    )
     #expect(await recorder.applies == [.init(enabled: true)])
   }
 
@@ -366,13 +370,28 @@ struct ClosedLidModeTests {
       $0.appliedClosedLidMode = .lock
       $0.closedLidStatus = .active
     }
+    let prompts = KeepUnlockedPromptRecorder(
+      choice: .keepUnlocked(pausingAutoLock: false)
+    )
+    store.dependencies.caffeinatePrompt.chooseKeepUnlocked = { includesSafety, autoLock in
+      await prompts.choose(includesOperationalSafety: includesSafety, autoLockEnabled: autoLock)
+    }
 
-    await store.send(.closedLidModeChanged(.unlocked)) {
-      $0.$config.withLock { $0.closedLidMode = .unlocked }
+    await store.send(.closedLidModeChanged(.unlocked))
+    await store.receive(\.caffeinateKeepUnlockedChoiceSelected) {
+      $0.$config.withLock {
+        $0.closedLidMode = .unlocked
+        $0.caffeinatePausesAutoLock = false
+      }
       $0.appliedClosedLidMode = .unlocked
     }
 
     await store.finish()
+    #expect(
+      await prompts.requests == [
+        .init(includesOperationalSafety: false, autoLockEnabled: false)
+      ]
+    )
     #expect(await recorder.applies.isEmpty)
   }
 
@@ -388,11 +407,15 @@ struct ClosedLidModeTests {
       $0.appliedClosedLidMode = .lock
       $0.closedLidStatus = .active
     }
-    store.dependencies.caffeinatePrompt.askAutoLockPause = { .pause }
+    let prompts = KeepUnlockedPromptRecorder(
+      choice: .keepUnlocked(pausingAutoLock: true)
+    )
+    store.dependencies.caffeinatePrompt.chooseKeepUnlocked = { includesSafety, autoLock in
+      await prompts.choose(includesOperationalSafety: includesSafety, autoLockEnabled: autoLock)
+    }
 
     await store.send(.closedLidModeChanged(.unlocked))
-
-    await store.receive(\.caffeinateAutoLockPauseChoiceSelected) {
+    await store.receive(\.caffeinateKeepUnlockedChoiceSelected) {
       $0.$config.withLock {
         $0.closedLidMode = .unlocked
         $0.caffeinatePausesAutoLock = true
@@ -402,6 +425,11 @@ struct ClosedLidModeTests {
 
     #expect(store.state.activeAutoLockPause == .whileCaffeinating)
     await store.finish()
+    #expect(
+      await prompts.requests == [
+        .init(includesOperationalSafety: false, autoLockEnabled: true)
+      ]
+    )
     #expect(await recorder.applies.isEmpty)
   }
 
@@ -418,10 +446,15 @@ struct ClosedLidModeTests {
       $0.appliedClosedLidMode = .lock
       $0.closedLidStatus = .active
     }
-    store.dependencies.caffeinatePrompt.askAutoLockPause = { .keepAutoLockOn }
+    let prompts = KeepUnlockedPromptRecorder(
+      choice: .keepUnlocked(pausingAutoLock: false)
+    )
+    store.dependencies.caffeinatePrompt.chooseKeepUnlocked = { includesSafety, autoLock in
+      await prompts.choose(includesOperationalSafety: includesSafety, autoLockEnabled: autoLock)
+    }
 
     await store.send(.closedLidModeChanged(.unlocked))
-    await store.receive(\.caffeinateAutoLockPauseChoiceSelected) {
+    await store.receive(\.caffeinateKeepUnlockedChoiceSelected) {
       $0.$config.withLock {
         $0.closedLidMode = .unlocked
         $0.caffeinatePausesAutoLock = false
@@ -431,10 +464,15 @@ struct ClosedLidModeTests {
 
     #expect(store.state.activeAutoLockPause == nil)
     await store.finish()
+    #expect(
+      await prompts.requests == [
+        .init(includesOperationalSafety: false, autoLockEnabled: true)
+      ]
+    )
   }
 
   @Test
-  func `cancelling the Caffeinate prompt preserves the current policy`() async {
+  func `cancelling the combined unlocked prompt preserves the locked policy`() async {
     let recorder = ClosedLidRecorder()
     let store = makeStore(recorder) {
       $0.$config.withLock {
@@ -444,13 +482,43 @@ struct ClosedLidModeTests {
       $0.appliedClosedLidMode = .lock
       $0.closedLidStatus = .active
     }
-    store.dependencies.caffeinatePrompt.askAutoLockPause = { .cancel }
+    let prompts = KeepUnlockedPromptRecorder(choice: .cancel)
+    store.dependencies.caffeinatePrompt.chooseKeepUnlocked = { includesSafety, autoLock in
+      await prompts.choose(includesOperationalSafety: includesSafety, autoLockEnabled: autoLock)
+    }
 
     await store.send(.closedLidModeChanged(.unlocked))
-    await store.receive(\.caffeinateAutoLockPauseChoiceSelected)
+    await store.receive(\.caffeinateKeepUnlockedChoiceSelected)
 
     #expect(store.state.config.closedLidMode == .lock)
     await store.finish()
+    #expect(
+      await prompts.requests == [
+        .init(includesOperationalSafety: false, autoLockEnabled: true)
+      ]
+    )
+    #expect(await recorder.applies.isEmpty)
+  }
+
+  @Test
+  func `cancelling the combined unlocked warning preserves normal sleep`() async {
+    let recorder = ClosedLidRecorder()
+    let store = makeStore(recorder)
+    let prompts = KeepUnlockedPromptRecorder(choice: .cancel)
+    store.dependencies.caffeinatePrompt.chooseKeepUnlocked = { includesSafety, autoLock in
+      await prompts.choose(includesOperationalSafety: includesSafety, autoLockEnabled: autoLock)
+    }
+
+    await store.send(.closedLidModeChanged(.unlocked))
+    await store.receive(\.caffeinateKeepUnlockedChoiceSelected)
+
+    #expect(store.state.config.closedLidMode == .off)
+    await store.finish()
+    #expect(
+      await prompts.requests == [
+        .init(includesOperationalSafety: true, autoLockEnabled: false)
+      ]
+    )
     #expect(await recorder.applies.isEmpty)
   }
 
@@ -697,6 +765,9 @@ struct ClosedLidModeTests {
         withdraw: { _ in },
       )
       store.dependencies.caffeinatePrompt.confirmSafety = { true }
+      store.dependencies.caffeinatePrompt.chooseKeepUnlocked = { _, _ in
+        .keepUnlocked(pausingAutoLock: false)
+      }
       store.dependencies.closedLidControl = ClosedLidControlClient(
         setEnabled: { enabled in
           await recorder.applied(enabled: enabled)
@@ -714,6 +785,44 @@ struct ClosedLidModeTests {
       return store
     }
   }
+
+}
+
+// MARK: - KeepUnlockedPromptRecorder
+
+private actor KeepUnlockedPromptRecorder {
+
+  // MARK: Lifecycle
+
+  init(choice: CaffeinateKeepUnlockedChoice) {
+    self.choice = choice
+  }
+
+  // MARK: Internal
+
+  struct Request: Equatable, Sendable {
+    let includesOperationalSafety: Bool
+    let autoLockEnabled: Bool
+  }
+
+  private(set) var requests = [Request]()
+
+  func choose(
+    includesOperationalSafety: Bool,
+    autoLockEnabled: Bool,
+  ) -> CaffeinateKeepUnlockedChoice {
+    requests.append(
+      Request(
+        includesOperationalSafety: includesOperationalSafety,
+        autoLockEnabled: autoLockEnabled,
+      )
+    )
+    return choice
+  }
+
+  // MARK: Private
+
+  private let choice: CaffeinateKeepUnlockedChoice
 
 }
 

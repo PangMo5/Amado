@@ -98,14 +98,20 @@ struct AppFeature {
     }
 
     /// The menu bar icon is compositional: the large lock, closed-lid marker,
-    /// pause clock, and attention marker are derived independently.
+    /// kind-specific pause badge, and attention marker are derived independently.
     var menuBarIndicator: MenuBarIndicatorState {
-      MenuBarIndicatorState(
+      let autoLockPause: MenuBarPauseIndicator? =
+        switch activeAutoLockPause {
+        case .until: .timed
+        case .whileCaffeinating: .whileCaffeinating
+        case nil: nil
+        }
+      return MenuBarIndicatorState(
         isAutoLockEnabled: config.proximityAutoLock,
         closedLidPolicy: closedLidStatus == .active
           ? config.closedLidMode.awakePolicy
           : nil,
-        isAutoLockPaused: activeAutoLockPause != nil,
+        autoLockPause: autoLockPause,
         needsAttention: !issues.isEmpty,
       )
     }
@@ -171,7 +177,7 @@ struct AppFeature {
     case issueRecoveryTapped(AgentIssue.Kind)
     case closedLidModeChanged(ClosedLidMode)
     case caffeinateSafetyConfirmationFinished(mode: ClosedLidMode, confirmed: Bool)
-    case caffeinateAutoLockPauseChoiceSelected(CaffeinateAutoLockPauseChoice)
+    case caffeinateKeepUnlockedChoiceSelected(CaffeinateKeepUnlockedChoice)
     case caffeinateHelperStatusRefreshTapped
     case caffeinateHelperStatusResponse(PowerHelperInstallationStatus)
     case caffeinateHelperSettingsTapped
@@ -445,6 +451,9 @@ struct AppFeature {
       case .closedLidModeChanged(let mode):
         guard mode != state.config.closedLidMode else { return .none }
         guard !mode.keepsAwake || state.powerHelperStatus.isReady else { return .none }
+        if mode == .unlocked {
+          return requestKeepUnlockedChoice(in: state)
+        }
         if mode.keepsAwake, !state.config.closedLidMode.keepsAwake {
           return .run { send in
             await send(
@@ -455,28 +464,21 @@ struct AppFeature {
             )
           }
         }
-        return requestClosedLidModeTransition(mode, in: &state)
+        return transitionClosedLidMode(mode, in: &state)
 
       case .caffeinateSafetyConfirmationFinished(let mode, let confirmed):
         guard confirmed, mode.keepsAwake else { return .none }
-        return requestClosedLidModeTransition(mode, in: &state)
+        return transitionClosedLidMode(mode, in: &state)
 
-      case .caffeinateAutoLockPauseChoiceSelected(.pause):
-        return transitionClosedLidMode(
-          .unlocked,
-          caffeinatePausesAutoLock: true,
-          in: &state,
-        )
-
-      case .caffeinateAutoLockPauseChoiceSelected(.keepAutoLockOn):
-        return transitionClosedLidMode(
-          .unlocked,
-          caffeinatePausesAutoLock: false,
-          in: &state,
-        )
-
-      case .caffeinateAutoLockPauseChoiceSelected(.cancel):
+      case .caffeinateKeepUnlockedChoiceSelected(.cancel):
         return .none
+
+      case .caffeinateKeepUnlockedChoiceSelected(.keepUnlocked(let pausingAutoLock)):
+        return transitionClosedLidMode(
+          .unlocked,
+          caffeinatePausesAutoLock: pausingAutoLock,
+          in: &state,
+        )
 
       case .caffeinateHelperStatusRefreshTapped:
         guard !state.isRefreshingPowerHelper else { return .none }
@@ -1282,21 +1284,19 @@ struct AppFeature {
     )
   }
 
-  private func requestClosedLidModeTransition(
-    _ mode: ClosedLidMode,
-    in state: inout State,
-  ) -> Effect<Action> {
-    guard mode != state.config.closedLidMode else { return .none }
-    if mode == .unlocked, state.config.proximityAutoLock {
-      return .run { send in
-        await send(
-          .caffeinateAutoLockPauseChoiceSelected(
-            await caffeinatePrompt.askAutoLockPause()
+  private func requestKeepUnlockedChoice(in state: State) -> Effect<Action> {
+    let includesOperationalSafety = !state.config.closedLidMode.keepsAwake
+    let autoLockEnabled = state.config.proximityAutoLock
+    return .run { send in
+      await send(
+        .caffeinateKeepUnlockedChoiceSelected(
+          await caffeinatePrompt.chooseKeepUnlocked(
+            includesOperationalSafety,
+            autoLockEnabled,
           )
         )
-      }
+      )
     }
-    return transitionClosedLidMode(mode, in: &state)
   }
 
   private func resetUnavailableCaffeinate(in state: inout State) -> Effect<Action> {

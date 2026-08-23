@@ -4,6 +4,11 @@ Notable changes to the Amado macOS app are documented here. Versions follow sema
 
 ## Unreleased
 
+## 2.0.3 (2026-08-24)
+
+- Added one context-sensitive confirmation before Caffeinate can keep the login session unlocked. It combines operational and security warnings when needed, exposes Auto-lock keep/pause choices as buttons in the same dialog, and keeps persistent warnings about physical access, existing remote-control software, and exposed session data.
+- The menu-bar pause badge now uses a clock only for timed pauses and a pause symbol when Auto-lock is paused for the duration of Caffeinate's unlocked policy.
+
 ## 2.0.2 (2026-08-22)
 
 - Fixed a Power Helper update loop caused by re-registering a daemon before macOS finished removing its previous registration.

@@ -103,7 +103,7 @@ struct AgentHealthTests {
   }
 
   @Test
-  func `menu bar indicator keeps auto-lock closed-lid and pause meanings independent`() async {
+  func `menu bar indicator keeps auto-lock closed-lid and pause kinds independent`() async {
     let deadline = Date(timeIntervalSince1970: 2_000)
 
     for isAutoLockEnabled in [false, true] {
@@ -122,16 +122,22 @@ struct AgentHealthTests {
               }
               $0.closedLidStatus = closedLidMode == .off ? .inactive : .active
             }
+            let expectedPause: MenuBarPauseIndicator? =
+              if !isAutoLockEnabled {
+                nil
+              } else if closedLidMode == .unlocked, caffeinatePausesAutoLock {
+                .whileCaffeinating
+              } else if isPauseConfigured {
+                .timed
+              } else {
+                nil
+              }
 
             #expect(
               store.state.menuBarIndicator == MenuBarIndicatorState(
                 isAutoLockEnabled: isAutoLockEnabled,
                 closedLidPolicy: closedLidMode.awakePolicy,
-                isAutoLockPaused: isAutoLockEnabled
-                  && (
-                    isPauseConfigured
-                      || (closedLidMode == .unlocked && caffeinatePausesAutoLock)
-                  ),
+                autoLockPause: expectedPause,
                 needsAttention: false,
               )
             )
@@ -161,7 +167,7 @@ struct AgentHealthTests {
       store.state.menuBarIndicator == MenuBarIndicatorState(
         isAutoLockEnabled: true,
         closedLidPolicy: .keepUnlocked,
-        isAutoLockPaused: true,
+        autoLockPause: .timed,
         needsAttention: true,
       )
     )

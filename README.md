@@ -54,10 +54,12 @@ Caffeinate.
 > consume battery and trap heat: keep it on a hard, stable, well-ventilated
 > surface and never leave it running in a bag, bedding, or another enclosed
 > space. You are responsible for monitoring the Mac and disabling Caffeinate
-> if conditions become unsafe. To the extent permitted by law, Amado and its
-> contributors are not liable for resulting battery depletion, data loss,
-> hardware damage, or injury. Follow [Apple's temperature and ventilation
-> guidance](https://support.apple.com/102336).
+> if conditions become unsafe. **Stay awake, keep unlocked** also leaves the
+> live login session available to anyone with physical access or access through
+> remote-control software already enabled on the Mac. To the extent permitted
+> by law, Amado and its contributors are not liable for resulting battery
+> depletion, data loss, hardware damage, or injury. Follow [Apple's temperature
+> and ventilation guidance](https://support.apple.com/102336).
 
 ## How it works
 

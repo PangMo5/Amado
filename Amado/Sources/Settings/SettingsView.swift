@@ -317,10 +317,12 @@ private struct CaffeinateSettingsPane: View {
 
         if store.config.closedLidMode == .unlocked {
           Label(
-            "The login session remains unlocked while the Mac is closed.",
+            "Caffeinate does not lock the login session when the lid closes. Anyone with physical access—or access through remote-control software already enabled on this Mac—may be able to use the session and access its data.",
             systemSymbol: .exclamationmarkTriangleFill,
           )
           .foregroundStyle(.orange)
+          .fixedSize(horizontal: false, vertical: true)
+          .accessibilityElement(children: .combine)
         }
       } header: {
         Text("Behavior")

@@ -48,13 +48,24 @@ unlocked. Amado sets only the built-in panel's backlight to zero and restores
 its previous brightness when the lid opens. The display remains logically
 connected because Amado deliberately does not request system display sleep:
 macOS can turn that request into a session lock when the password delay is
-immediate. Use the unlocked policy only when the machine's physical and remote
-access are already controlled.
+immediate.
 
-When proximity Auto-lock is enabled, selecting this policy asks whether to
-pause it. Choosing the pause option stops proximity monitoring for as long as
-Caffeinate remains set to **Stay awake, keep unlocked**. Choosing to keep
-Auto-lock on allows it to lock the session without putting the Mac to sleep.
+Selecting this policy requires one context-sensitive confirmation. When
+enabling Caffeinate from **Off**, the same dialog combines its heat, battery,
+responsibility, and unlocked-session warnings. Caffeinate does not lock the
+login session when the lid closes, so anyone with physical access—or access
+through remote-control software already enabled on the Mac—may be able to use
+the session and access its apps, files, accounts, and data. Use the unlocked
+policy only when the machine's physical and remote access are already
+controlled.
+
+When proximity Auto-lock is enabled, that same confirmation provides separate
+**Keep Auto-lock On**, **Pause Auto-lock**, and **Cancel** buttons. Choosing the
+pause option stops proximity monitoring for as long as Caffeinate remains set
+to **Stay awake, keep unlocked**. Choosing to keep Auto-lock on allows it to
+lock the session without putting the Mac to sleep. Pausing Auto-lock removes
+that additional protection: Amado will not lock the Mac when the selected
+iPhone leaves.
 
 ## Why a helper is required
 
