@@ -1,7 +1,7 @@
 Amado is a companion app for the free Amado macOS menu bar agent. The companion requires macOS 15 or later and does not require an account or purchase.
 
 Review steps:
-1. On the iPhone setup screen, tap Get Amado for Mac or visit https://pangmo5.dev/Amado/.
+1. On the iPhone setup screen, tap Get Amado for Mac or visit https://amado.pangmo5.dev/.
 2. Install and open the Mac app.
 3. Choose Show pairing code in the Amado menu bar menu.
 4. In the iPhone app, tap Scan pairing QR and scan the code.

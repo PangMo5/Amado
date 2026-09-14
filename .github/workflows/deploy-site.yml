@@ -9,15 +9,14 @@ on:
       - "CHANGELOG.md"
       - "Amado/Resources/Assets.xcassets/AppIcon.appiconset/icon_1024.png"
       - ".github/workflows/deploy-site.yml"
+      - "wrangler.jsonc"
   workflow_dispatch:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
-  group: pages
+  group: deploy-site
   cancel-in-progress: false
 
 jobs:
@@ -49,7 +48,7 @@ jobs:
           BUST="${GITHUB_SHA:0:8}"
           sed -i "s#\"./style.css\"#\"./style.css?v=${BUST}\"#g" "$SITE"/*.html
 
-          # A Pages deploy replaces the whole site. Always take Sparkle's feed
+          # A site deploy replaces the whole site. Always take Sparkle's feed
           # from the latest GitHub Release so a first release does not depend on
           # an appcast already existing on the website.
           if [ -n "$VERSION" ]; then
@@ -60,16 +59,32 @@ jobs:
             echo "No release yet; appcast.xml is not expected"
           fi
 
-      - uses: actions/upload-pages-artifact@v5
+      - name: Add static asset headers
+        run: cp web/_headers "$RUNNER_TEMP/site/_headers"
+
+      - uses: actions/upload-artifact@v4
         with:
+          name: site
           path: ${{ runner.temp }}/site
+          include-hidden-files: true
+          retention-days: 1
 
   deploy:
     needs: build
     runs-on: ubuntu-latest
     environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      name: cloudflare
+      url: https://amado.pangmo5.dev
     steps:
-      - id: deployment
-        uses: actions/deploy-pages@v5
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v4
+        with:
+          name: site
+          path: dist
+      - name: Deploy static assets
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4.131.2"
+          command: deploy

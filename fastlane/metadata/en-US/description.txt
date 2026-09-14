@@ -18,4 +18,4 @@ SECURE PAIRING
 
 Scan the QR code shown by the Mac app to pair. Commands and their matching responses are authenticated with HMAC-SHA256, fresh timestamps, and one-time nonces. Amado can lock your Mac and report its lock state. It cannot unlock it.
 
-The free Amado macOS companion app is required. Download it from pangmo5.dev/Amado/ or GitHub.
+The free Amado macOS companion app is required. Download it from amado.pangmo5.dev/ or GitHub.
