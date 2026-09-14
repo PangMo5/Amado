@@ -2,7 +2,7 @@ name: Release
 
 # Push a tag such as v0.1.0 to build, sign, notarize, and publish the macOS
 # agent. The workflow also signs the archive for Sparkle, then dispatches the
-# dedicated site workflow so Pages receives a deployment from the main branch.
+# dedicated site workflow so Workers receives a deployment from the main branch.
 on:
   push:
     tags:
@@ -372,11 +372,7 @@ jobs:
           git commit -m "amado ${VERSION}"
           git push
 
-      # A tag and its main-branch commit can share GITHUB_SHA. Deploying Pages
-      # directly from both runs reuses pages_build_version and can report
-      # success without replacing the earlier artifact. A workflow_dispatch of
-      # the dedicated site workflow avoids that collision and always downloads
-      # the appcast from the GitHub Release published above.
+      # Deploy from main after the canonical signed release feed is available.
       - name: Deploy website with release appcast
         env:
           GH_TOKEN: ${{ github.token }}

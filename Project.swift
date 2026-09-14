@@ -90,7 +90,7 @@ let project = Project(
         "NSLocalNetworkUsageDescription": .string(localNetworkUsage),
         "NSBonjourServices": .array([.string("_amado._tcp")]),
         "NSBluetoothAlwaysUsageDescription": .string(bluetoothUsageMac),
-        "SUFeedURL": "https://pangmo5.dev/Amado/appcast.xml",
+        "SUFeedURL": "https://amado.pangmo5.dev/appcast.xml",
         "SUEnableAutomaticChecks": true,
         "SUPublicEDKey": "$(SPARKLE_PUBLIC_ED_KEY)",
       ]),
