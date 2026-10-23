@@ -150,10 +150,14 @@ public struct ProximityDecisionEngine: Sendable {
 
   /// Evaluates a Bluetooth-on signal gap. Call after the normal 30-second
   /// freshness window and periodically afterward until a sample returns.
+  /// `lossBeganAt` lets a transport whose live link explicitly disconnected
+  /// start confirmation at that trusted boundary instead of counting an
+  /// earlier period of unusable-but-still-connected samples.
   public mutating func signalLost(
-    at timestamp: TimeInterval
+    at timestamp: TimeInterval,
+    lossBeganAt: TimeInterval? = nil,
   ) -> Evaluation {
-    signalLostSince = signalLostSince ?? lastSampleAt ?? timestamp
+    signalLostSince = signalLostSince ?? lossBeganAt ?? lastSampleAt ?? timestamp
 
     guard armed, phase != .awayLatched else {
       phase = phase == .awayLatched ? .awayLatched : .signalLost

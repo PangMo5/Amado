@@ -22,9 +22,9 @@ let widgetProvisioningProfile = Environment.widgetProvisioningProfile.getString(
 /// on the LAN.
 let localNetworkUsage = "Amado connects to your Mac on the local network to lock it."
 
-/// Bluetooth prompt for proximity auto-lock: the Mac scans for the owner's iPhone
-/// (via its native BLE, no app on the phone) and locks itself when it leaves.
-let bluetoothUsageMac = "Amado uses Bluetooth to sense when your iPhone leaves and lock this Mac."
+/// Bluetooth prompt for proximity auto-lock: the Mac observes the selected
+/// phone through Continuity BLE or an explicitly paired Bluetooth connection.
+let bluetoothUsageMac = "Amado uses Bluetooth to sense when your selected phone leaves and lock this Mac."
 
 let baseSettings: SettingsDictionary = [
   "DEVELOPMENT_TEAM": SettingValue(stringLiteral: developmentTeam),

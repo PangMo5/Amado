@@ -37,7 +37,7 @@ let packageSettings = PackageSettings(
 let package = Package(
   name: "Amado",
   dependencies: [
-    .package(url: "https://github.com/pointfreeco/swift-composable-architecture", from: "1.20.0"),
+    .package(url: "https://github.com/pointfreeco/swift-composable-architecture", from: "1.26.1"),
     .package(url: "https://github.com/pointfreeco/swift-sharing", from: "2.5.0"),
     .package(url: "https://github.com/SFSafeSymbols/SFSafeSymbols", from: "5.3.0"),
     .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.7.0"),

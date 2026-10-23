@@ -77,6 +77,12 @@ struct AppFeature {
     /// Signature of the proximity fields last pushed to the engine, so a config
     /// change (UI or external edit) re-issues monitor() at most once.
     var appliedProximityKey = ""
+    /// Active target last handed to the engine. This separates a target change,
+    /// which clears old health, from a same-target tuning restart.
+    var appliedProximityDevice: ProximityDeviceID?
+    /// Reducer-owned token carried through the engine's far event. Reissuing a
+    /// monitor invalidates already-buffered events even for the same device.
+    var proximityMonitorSession: UInt64 = 0
 
     var pairingSecret: PairingSecret? {
       PairingSecret(base64: pairingSecretBase64)
@@ -89,7 +95,7 @@ struct AppFeature {
     var activeAutoLockPause: AutoLockPause? {
       guard
         config.proximityAutoLock,
-        !config.proximityDeviceID.isEmpty
+        config.proximityDevice != nil
       else { return nil }
       if config.closedLidMode == .unlocked, config.caffeinatePausesAutoLock {
         return .whileCaffeinating
@@ -229,9 +235,9 @@ struct AppFeature {
     case proximitySmoothingChanged(Int)
     case proximityScanToggled(Bool)
     case proximityDevicesUpdated([DiscoveredDevice])
-    case proximityStatusChanged(ProximityStatus)
+    case proximityStatusChanged(ProximityStatusEvent)
     case configChanged(AmadoConfig)
-    case proximityFarDetected(ProximityDecisionEngine.LockReason)
+    case proximityFarDetected(ProximityFarEvent)
   }
 
   @Dependency(\.caffeinatePrompt) var caffeinatePrompt
@@ -292,8 +298,13 @@ struct AppFeature {
         let cfg = state.config
         state.appliedClosedLidMode = cfg.closedLidMode
         state.appliedProximityKey = proximityKey(cfg)
+        state.proximityMonitorSession &+= 1
         let sharedConfig = state.$config
-        let proximityConfiguration = proximityMonitorConfiguration(cfg)
+        let proximityConfiguration = proximityMonitorConfiguration(
+          cfg,
+          session: state.proximityMonitorSession,
+        )
+        state.appliedProximityDevice = proximityConfiguration.device
         // Listen on both transports; `.received` verifies + dedups by nonce, so
         // a command arriving via LAN *and* the tunnel locks at most once.
         // Starting a listener is kept separate from consuming it: a listener
@@ -337,13 +348,13 @@ struct AppFeature {
           },
           .run { send in
             proximityLock.monitor(proximityConfiguration)
-            for await reason in proximityLock.farEvents() {
-              await send(.proximityFarDetected(reason))
+            for await event in proximityLock.farEvents() {
+              await send(.proximityFarDetected(event))
             }
           },
           .run { send in
-            for await proximityStatus in proximityLock.status() {
-              await send(.proximityStatusChanged(proximityStatus))
+            for await event in proximityLock.status() {
+              await send(.proximityStatusChanged(event))
             }
           },
           .run { send in
@@ -1033,17 +1044,18 @@ struct AppFeature {
         state.remoteTestMessage = message
         return .none
 
-      case .proximityFarDetected(let reason):
+      case .proximityFarDetected(let event):
         guard
           state.config.proximityAutoLock,
-          !state.config.proximityDeviceID.isEmpty,
+          state.config.proximityDevice == event.device,
+          state.proximityMonitorSession == event.session,
           state.config.activeAutoLockPause(at: date.now) == nil
         else {
           return .none
         }
-        let name = state.config.proximityDeviceName.isEmpty ? "your iPhone" : state.config.proximityDeviceName
+        let name = state.config.proximityDeviceName.isEmpty ? "your phone" : state.config.proximityDeviceName
         state.record(
-          "Locked — \(name) left (\(reason.activityDescription))",
+          "Locked — \(name) left (\(event.reason.activityDescription))",
           kind: .locked,
           id: uuid(),
           at: date.now,
@@ -1052,24 +1064,79 @@ struct AppFeature {
           await send(.screenLockAttempted(succeeded: screenLocker.lock()))
         }
 
-      case .proximityStatusChanged(let proximityStatus):
+      case .proximityStatusChanged(let event):
+        guard event.session == state.proximityMonitorSession else { return .none }
+        let proximityStatus = event.status
+        let previousProximityStatus = state.proximityStatus
         state.proximityStatus = proximityStatus
-        // Bluetooth being off only matters when auto-lock is actually set up;
-        // otherwise the radio is nobody's business.
-        guard
-          state.config.proximityAutoLock,
-          !state.config.proximityDeviceID.isEmpty,
-          case .waitingForBluetooth(let reason) = proximityStatus
-        else {
+        guard state.config.proximityAutoLock else {
           return resolve(.bluetooth, in: &state)
         }
-        return raise(
-          .bluetooth,
-          detail: reason.summary,
-          recovery: bluetoothRecovery(for: reason),
-          interrupts: reason.needsUserAction,
-          in: &state,
-        )
+        guard state.config.proximityDevice != nil else {
+          if state.config.proximityDeviceID.isEmpty {
+            return resolve(.bluetooth, in: &state)
+          }
+          return raise(
+            .bluetooth,
+            detail: "The selected Auto-lock device identifier is invalid.",
+            interrupts: false,
+            in: &state,
+          )
+        }
+        switch proximityStatus {
+        case .waitingForBluetooth(let reason):
+          return raise(
+            .bluetooth,
+            detail: reason.summary,
+            recovery: bluetoothRecovery(for: reason),
+            interrupts: reason.needsUserAction,
+            in: &state,
+          )
+
+        case .deviceUnavailable:
+          return raise(
+            .bluetooth,
+            detail: "The selected paired Bluetooth device is unavailable.",
+            recovery: SystemSettings.bluetooth.map(AgentIssueRecovery.openSettings),
+            interrupts: false,
+            in: &state,
+          )
+
+        case .connectionUnavailable:
+          return raise(
+            .bluetooth,
+            detail: "Amado could not connect to the selected paired Bluetooth device.",
+            recovery: SystemSettings.bluetooth.map(AgentIssueRecovery.openSettings),
+            interrupts: false,
+            in: &state,
+          )
+
+        case .signalUnavailable:
+          return raise(
+            .bluetooth,
+            detail: "macOS is not providing usable signal strength for the selected device.",
+            interrupts: false,
+            in: &state,
+          )
+
+        case .connecting,
+             .reacquiring,
+             .searching:
+          if case .waitingForBluetooth = previousProximityStatus {
+            return resolve(.bluetooth, in: &state)
+          }
+          return .none
+
+        case .learning(let rssi):
+          return rssi == nil ? .none : resolve(.bluetooth, in: &state)
+
+        case .away,
+             .disabled,
+             .leaving,
+             .near,
+             .signalLost:
+          return resolve(.bluetooth, in: &state)
+        }
 
       case .proximityAutoLockToggled(let on):
         // Persist only; the config observer re-issues monitor().
@@ -1117,7 +1184,8 @@ struct AppFeature {
 
       case .proximityDeviceSelected(let device):
         state.$config.withLock {
-          $0.proximityDeviceID = device.id.uuidString
+          $0.proximityDeviceTransport = device.id.transport
+          $0.proximityDeviceID = device.id.rawValue
           $0.proximityDeviceName = device.name
         }
         return .none
@@ -1178,8 +1246,18 @@ struct AppFeature {
 
         let key = proximityKey(newConfig)
         if key != state.appliedProximityKey {
+          let previousAppliedDevice = state.appliedProximityDevice
           state.appliedProximityKey = key
-          let configuration = proximityMonitorConfiguration(newConfig)
+          state.proximityMonitorSession &+= 1
+          let configuration = proximityMonitorConfiguration(
+            newConfig,
+            session: state.proximityMonitorSession,
+          )
+          state.appliedProximityDevice = configuration.device
+          if previousAppliedDevice != configuration.device {
+            effects.append(resolve(.bluetooth, in: &state))
+          }
+          state.proximityStatus = configuration.device == nil ? .disabled : .searching
           effects.append(
             .run { _ in
               proximityLock.monitor(configuration)
@@ -1359,16 +1437,21 @@ struct AppFeature {
     return """
       \(config.proximityAutoLock)|\(pauseUntil)|\
       \(config.closedLidMode.rawValue)|\(config.caffeinatePausesAutoLock)|\
-      \(config.proximityDeviceID)|\(config.proximityMode.rawValue)|\
+      \(config.proximityDeviceTransport.rawValue)|\(config.proximityDeviceID)|\
+      \(config.proximityMode.rawValue)|\
       \(config.proximitySensitivity.rawValue)|\(config.proximityFarRSSI)|\
       \(config.proximityGraceSeconds)|\(config.proximitySmoothing)
       """
   }
 
-  private func proximityMonitorConfiguration(_ config: AmadoConfig) -> ProximityMonitorConfiguration {
+  private func proximityMonitorConfiguration(
+    _ config: AmadoConfig,
+    session: UInt64,
+  ) -> ProximityMonitorConfiguration {
     let isPaused = config.activeAutoLockPause(at: date.now) != nil
     return ProximityMonitorConfiguration(
-      deviceID: config.proximityAutoLock && !isPaused ? UUID(uuidString: config.proximityDeviceID) : nil,
+      device: config.proximityAutoLock && !isPaused ? config.proximityDevice : nil,
+      session: session,
       mode: config.proximityMode,
       sensitivity: config.proximitySensitivity,
       manualFarRSSI: config.proximityFarRSSI,

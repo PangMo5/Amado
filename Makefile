@@ -5,6 +5,7 @@ install:
 
 generate:
 	tuist generate --no-open
+	python3 scripts/normalize_dependency_deployment_targets.py
 
 # `tuist build` is deprecated; generate first, then drive the generated project
 # through the `tuist xcodebuild` wrapper.

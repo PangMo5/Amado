@@ -55,6 +55,71 @@ enum AutoLockPause: Equatable, Sendable {
   case whileCaffeinating
 }
 
+// MARK: - ProximityDeviceTransport
+
+/// How Amado identifies and samples the selected proximity device.
+enum ProximityDeviceTransport: String, CaseIterable, Equatable, Hashable, Sendable, Codable {
+  /// Native iPhone Continuity advertising, identified by Core Bluetooth UUID.
+  case continuity
+  /// A system-paired Bluetooth device, identified by its Classic address.
+  case classic
+}
+
+// MARK: - ProximityDeviceID
+
+/// A transport-qualified identity. The same raw text from two transports must
+/// never alias: their discovery, connection, and privacy contracts differ.
+enum ProximityDeviceID: Equatable, Hashable, Sendable {
+  case continuity(UUID)
+  case classic(String)
+
+  // MARK: Lifecycle
+
+  init?(transport: ProximityDeviceTransport, rawValue: String) {
+    switch transport {
+    case .continuity:
+      guard let id = UUID(uuidString: rawValue) else { return nil }
+      self = .continuity(id)
+
+    case .classic:
+      guard let address = Self.normalizedClassicAddress(rawValue) else { return nil }
+      self = .classic(address)
+    }
+  }
+
+  // MARK: Internal
+
+  var transport: ProximityDeviceTransport {
+    switch self {
+    case .continuity: .continuity
+    case .classic: .classic
+    }
+  }
+
+  var rawValue: String {
+    switch self {
+    case .continuity(let id): id.uuidString
+    case .classic(let address): address
+    }
+  }
+
+  // MARK: Private
+
+  private static func normalizedClassicAddress(_ rawValue: String) -> String? {
+    let components = rawValue
+      .lowercased()
+      .replacingOccurrences(of: ":", with: "-")
+      .split(separator: "-", omittingEmptySubsequences: false)
+    guard
+      components.count == 6,
+      components.allSatisfy({ component in
+        component.count == 2 && component.allSatisfy(\.isHexDigit)
+      })
+    else { return nil }
+    return components.joined(separator: "-")
+  }
+}
+
 // MARK: - AmadoConfig
 
 /// Root of Amado's on-disk configuration, at `~/.config/amado/config.toml`
@@ -73,6 +138,7 @@ struct AmadoConfig: Equatable, Sendable, Codable {
     proximityAutoLock: Bool = false,
     caffeinatePausesAutoLock: Bool = false,
     proximityPauseUntil: Double? = nil,
+    proximityDeviceTransport: ProximityDeviceTransport = .continuity,
     proximityDeviceID: String = "",
     proximityDeviceName: String = "",
     proximityMode: ProximityDetectionMode = .smart,
@@ -87,6 +153,7 @@ struct AmadoConfig: Equatable, Sendable, Codable {
     self.proximityAutoLock = proximityAutoLock
     self.caffeinatePausesAutoLock = caffeinatePausesAutoLock
     self.proximityPauseUntil = proximityPauseUntil
+    self.proximityDeviceTransport = proximityDeviceTransport
     self.proximityDeviceID = proximityDeviceID
     self.proximityDeviceName = proximityDeviceName
     self.proximityMode = proximityMode
@@ -119,6 +186,9 @@ struct AmadoConfig: Equatable, Sendable, Codable {
     proximityPauseUntil = container.contains(.proximityPauseUntil)
       ? try container.decode(Double.self, forKey: .proximityPauseUntil)
       : nil
+    proximityDeviceTransport = container.contains(.proximityDeviceTransport)
+      ? try container.decode(ProximityDeviceTransport.self, forKey: .proximityDeviceTransport)
+      : .continuity
     proximityDeviceID = container.contains(.proximityDeviceID)
       ? try container.decode(String.self, forKey: .proximityDeviceID)
       : ""
@@ -152,8 +222,7 @@ struct AmadoConfig: Equatable, Sendable, Codable {
   /// Off, keep awake and lock, or keep awake while leaving the login session
   /// unlocked. The user-approved Power Helper applies the privileged modes.
   var closedLidMode: ClosedLidMode
-  /// Lock this Mac when the selected nearby device (the owner's iPhone) walks
-  /// out of Bluetooth range.
+  /// Lock this Mac when the selected nearby phone walks out of Bluetooth range.
   var proximityAutoLock: Bool
   /// Suspend proximity locking whenever Caffeinate is configured to keep the
   /// login session unlocked. The pause ends with that Caffeinate policy.
@@ -162,7 +231,10 @@ struct AmadoConfig: Equatable, Sendable, Codable {
   /// auto-lock is not paused. Keeping the deadline on disk lets a pause survive
   /// app restarts without turning the underlying auto-lock preference off.
   var proximityPauseUntil: Double?
-  /// CoreBluetooth identifier (UUID string) of the device to sense; empty = none.
+  /// Discovery and connection path for the selected device. Missing legacy
+  /// values decode as Continuity to preserve existing iPhone selections.
+  var proximityDeviceTransport: ProximityDeviceTransport
+  /// Transport-specific identifier of the device to sense; empty = none.
   var proximityDeviceID: String
   /// Cached display name of that device, for the Settings UI.
   var proximityDeviceName: String
@@ -179,6 +251,13 @@ struct AmadoConfig: Equatable, Sendable, Codable {
   /// Number of recent RSSI samples averaged in manual mode.
   /// Smaller = snappier but noisier; larger = smoother but laggier.
   var proximitySmoothing: Int
+
+  var proximityDevice: ProximityDeviceID? {
+    ProximityDeviceID(
+      transport: proximityDeviceTransport,
+      rawValue: proximityDeviceID,
+    )
+  }
 
   func activeProximityPauseUntil(at now: Date) -> Date? {
     guard let proximityPauseUntil else { return nil }
@@ -202,6 +281,7 @@ struct AmadoConfig: Equatable, Sendable, Codable {
     case proximityAutoLock = "proximity_auto_lock"
     case caffeinatePausesAutoLock = "caffeinate_pauses_auto_lock"
     case proximityPauseUntil = "proximity_pause_until"
+    case proximityDeviceTransport = "proximity_device_transport"
     case proximityDeviceID = "proximity_device_id"
     case proximityDeviceName = "proximity_device_name"
     case proximityMode = "proximity_mode"

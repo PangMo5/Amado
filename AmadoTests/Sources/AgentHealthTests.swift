@@ -239,7 +239,7 @@ struct AgentHealthTests {
     let store = makeStore(notifications)
 
     // Auto-lock is off, so the radio being off is nobody's problem.
-    await store.send(.proximityStatusChanged(.waitingForBluetooth(.poweredOff))) {
+    await store.send(.proximityStatusChanged(status(.waitingForBluetooth(.poweredOff)))) {
       $0.proximityStatus = .waitingForBluetooth(.poweredOff)
     }
     #expect(store.state.issues.isEmpty)
@@ -248,7 +248,7 @@ struct AgentHealthTests {
       $0.proximityAutoLock = true
       $0.proximityDeviceID = UUID().uuidString
     }
-    await store.send(.proximityStatusChanged(.waitingForBluetooth(.poweredOff))) {
+    await store.send(.proximityStatusChanged(status(.waitingForBluetooth(.poweredOff)))) {
       $0.issues = [
         AgentIssue(
           kind: .bluetooth,
@@ -271,7 +271,7 @@ struct AgentHealthTests {
       $0.proximityDeviceID = UUID().uuidString
     }
 
-    await store.send(.proximityStatusChanged(.waitingForBluetooth(.resetting))) {
+    await store.send(.proximityStatusChanged(status(.waitingForBluetooth(.resetting)))) {
       $0.proximityStatus = .waitingForBluetooth(.resetting)
       $0.issues = [
         AgentIssue(kind: .bluetooth, detail: BluetoothUnavailability.resetting.summary)
@@ -281,6 +281,217 @@ struct AgentHealthTests {
     await store.finish()
     // Visible in the menu, but not worth a notification: it fixes itself.
     #expect(await notifications.posted.isEmpty)
+  }
+
+  @Test
+  func `Bluetooth recovery clears a radio-off issue while reacquiring`() async {
+    let notifications = NotificationRecorder()
+    let store = makeStore(notifications) {
+      $0.$config.withLock {
+        $0.proximityAutoLock = true
+        $0.proximityDeviceID = UUID().uuidString
+      }
+      $0.proximityStatus = .waitingForBluetooth(.poweredOff)
+      $0.issues = [
+        AgentIssue(
+          kind: .bluetooth,
+          detail: BluetoothUnavailability.poweredOff.summary,
+          recovery: SystemSettings.bluetooth.map(AgentIssueRecovery.openSettings),
+        )
+      ]
+    }
+
+    await store.send(.proximityStatusChanged(status(.reacquiring))) {
+      $0.proximityStatus = .reacquiring
+      $0.issues = []
+    }
+
+    await store.finish()
+    #expect(await notifications.withdrawn == ["bluetooth"])
+  }
+
+  @Test
+  func `paired device connection failure is visible without interrupting`() async {
+    let notifications = NotificationRecorder()
+    let store = makeStore(notifications) {
+      $0.$config.withLock {
+        $0.proximityAutoLock = true
+        $0.proximityDeviceTransport = .classic
+        $0.proximityDeviceID = "aa-bb-cc-dd-ee-ff"
+      }
+    }
+
+    await store.send(.proximityStatusChanged(status(.connectionUnavailable))) {
+      $0.proximityStatus = .connectionUnavailable
+      $0.issues = [
+        AgentIssue(
+          kind: .bluetooth,
+          detail: "Amado could not connect to the selected paired Bluetooth device.",
+          recovery: SystemSettings.bluetooth.map(AgentIssueRecovery.openSettings),
+        )
+      ]
+    }
+
+    await store.finish()
+    #expect(await notifications.posted.isEmpty)
+  }
+
+  @Test
+  func `paired device signal failure remains visible without interrupting`() async {
+    let notifications = NotificationRecorder()
+    let store = makeStore(notifications) {
+      $0.$config.withLock {
+        $0.proximityAutoLock = true
+        $0.proximityDeviceTransport = .classic
+        $0.proximityDeviceID = "aa-bb-cc-dd-ee-ff"
+      }
+    }
+
+    await store.send(.proximityStatusChanged(status(.signalUnavailable))) {
+      $0.proximityStatus = .signalUnavailable
+      $0.issues = [
+        AgentIssue(
+          kind: .bluetooth,
+          detail: "macOS is not providing usable signal strength for the selected device.",
+        )
+      ]
+    }
+    await store.send(.proximityStatusChanged(status(.learning(rssi: -45)))) {
+      $0.proximityStatus = .learning(rssi: -45)
+      $0.issues = []
+    }
+
+    await store.finish()
+    #expect(await notifications.posted.isEmpty)
+    #expect(await notifications.withdrawn == ["bluetooth"])
+  }
+
+  @Test
+  func `retrying keeps a device failure visible until usable signal returns`() async {
+    let notifications = NotificationRecorder()
+    let store = makeStore(notifications) {
+      $0.$config.withLock {
+        $0.proximityAutoLock = true
+        $0.proximityDeviceTransport = .classic
+        $0.proximityDeviceID = "aa-bb-cc-dd-ee-ff"
+      }
+      $0.issues = [
+        AgentIssue(
+          kind: .bluetooth,
+          detail: "macOS is not providing usable signal strength for the selected device.",
+        )
+      ]
+      $0.proximityStatus = .signalUnavailable
+    }
+
+    await store.send(.proximityStatusChanged(status(.reacquiring))) {
+      $0.proximityStatus = .reacquiring
+    }
+    await store.send(.proximityStatusChanged(status(.learning(rssi: nil)))) {
+      $0.proximityStatus = .learning(rssi: nil)
+    }
+    await store.send(.proximityStatusChanged(status(.learning(rssi: -48)))) {
+      $0.proximityStatus = .learning(rssi: -48)
+      $0.issues = []
+    }
+
+    await store.finish()
+    #expect(await notifications.withdrawn == ["bluetooth"])
+  }
+
+  @Test
+  func `A new monitor target clears the previous target Bluetooth failure`() async throws {
+    let notifications = NotificationRecorder()
+    let deviceID = try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000123"))
+    let config = AmadoConfig(
+      proximityAutoLock: true,
+      proximityDeviceID: deviceID.uuidString,
+      proximityDeviceName: "iPhone",
+    )
+    let store = makeStore(notifications) {
+      $0.$config.withLock { $0 = config }
+      $0.appliedProximityKey =
+        "true||off|false|classic|aa-bb-cc-dd-ee-ff|smart|balanced|-56|2.0|3"
+      $0.appliedProximityDevice = .classic("aa-bb-cc-dd-ee-ff")
+      $0.proximityStatus = .signalUnavailable
+      $0.issues = [
+        AgentIssue(
+          kind: .bluetooth,
+          detail: "macOS is not providing usable signal strength for the selected device.",
+        )
+      ]
+    }
+    store.dependencies.date = .constant(Date(timeIntervalSince1970: 1_000))
+
+    await store.send(.configChanged(config)) {
+      $0.appliedProximityKey =
+        "true||off|false|continuity|\(deviceID.uuidString)|smart|balanced|-56|2.0|3"
+      $0.appliedProximityDevice = .continuity(deviceID)
+      $0.proximityMonitorSession = 1
+      $0.proximityStatus = .searching
+      $0.issues = []
+    }
+
+    await store.finish()
+    #expect(await notifications.withdrawn == ["bluetooth"])
+  }
+
+  @Test
+  func `Same target tuning keeps its Bluetooth failure until signal recovers`() async {
+    let notifications = NotificationRecorder()
+    let address = "aa-bb-cc-dd-ee-ff"
+    let config = AmadoConfig(
+      proximityAutoLock: true,
+      proximityDeviceTransport: .classic,
+      proximityDeviceID: address,
+      proximitySensitivity: .fast,
+    )
+    let store = makeStore(notifications) {
+      $0.$config.withLock { $0 = config }
+      $0.appliedProximityKey =
+        "true||off|false|classic|\(address)|smart|balanced|-56|2.0|3"
+      $0.appliedProximityDevice = .classic(address)
+      $0.proximityStatus = .signalUnavailable
+      $0.issues = [
+        AgentIssue(
+          kind: .bluetooth,
+          detail: "macOS is not providing usable signal strength for the selected device.",
+        )
+      ]
+    }
+    store.dependencies.date = .constant(Date(timeIntervalSince1970: 1_000))
+
+    await store.send(.configChanged(config)) {
+      $0.appliedProximityKey =
+        "true||off|false|classic|\(address)|smart|fast|-56|2.0|3"
+      $0.proximityMonitorSession = 1
+      $0.proximityStatus = .searching
+    }
+
+    await store.finish()
+    #expect(await notifications.withdrawn.isEmpty)
+  }
+
+  @Test
+  func `invalid configured device is a visible inactive state`() async {
+    let store = makeStore(NotificationRecorder()) {
+      $0.$config.withLock {
+        $0.proximityAutoLock = true
+        $0.proximityDeviceTransport = .classic
+        $0.proximityDeviceID = "invalid"
+      }
+    }
+
+    await store.send(.proximityStatusChanged(status(.disabled))) {
+      $0.issues = [
+        AgentIssue(
+          kind: .bluetooth,
+          detail: "The selected Auto-lock device identifier is invalid.",
+        )
+      ]
+    }
+
+    await store.finish()
   }
 
   @Test
@@ -302,6 +513,13 @@ struct AgentHealthTests {
   }
 
   // MARK: Private
+
+  private func status(
+    _ status: ProximityStatus,
+    session: UInt64 = 0,
+  ) -> ProximityStatusEvent {
+    ProximityStatusEvent(device: nil, session: session, status: status)
+  }
 
   private func makeStore(
     _ recorder: NotificationRecorder,

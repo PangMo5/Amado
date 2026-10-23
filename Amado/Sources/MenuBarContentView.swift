@@ -71,7 +71,7 @@ struct MenuBarContentView: View {
         .foregroundStyle(.orange)
       }
 
-      if store.config.proximityAutoLock, !store.config.proximityDeviceID.isEmpty {
+      if store.config.proximityAutoLock, store.config.proximityDevice != nil {
         Menu("Pause Auto-lock") {
           if let pause = store.activeAutoLockPause {
             switch pause {

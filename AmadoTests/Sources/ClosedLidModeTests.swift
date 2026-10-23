@@ -528,7 +528,7 @@ struct ClosedLidModeTests {
     let config = AmadoConfig(closedLidMode: .lock)
     let store = makeStore(recorder) {
       $0.$config.withLock { $0 = config }
-      $0.appliedProximityKey = "false||lock|false||smart|balanced|-56|2.0|3"
+      $0.appliedProximityKey = "false||lock|false|continuity||smart|balanced|-56|2.0|3"
     }
 
     await store.send(.configChanged(config)) {
@@ -637,12 +637,20 @@ struct ClosedLidModeTests {
     }
     store.dependencies.screenLocker.lock = { true }
 
-    await store.send(.proximityFarDetected(.veryWeakSignal)) {
+    await store.send(
+      .proximityFarDetected(
+        ProximityFarEvent(
+          device: .continuity(Self.deviceID),
+          session: 0,
+          reason: .veryWeakSignal,
+        )
+      )
+    ) {
       $0.activity = [
         ActivityEntry(
           id: Self.eventID,
           at: Self.now,
-          message: "Locked — your iPhone left (very weak signal)",
+          message: "Locked — your phone left (very weak signal)",
           kind: .locked,
         )
       ]
@@ -670,7 +678,15 @@ struct ClosedLidModeTests {
       return true
     }
 
-    await store.send(.proximityFarDetected(.veryWeakSignal))
+    await store.send(
+      .proximityFarDetected(
+        ProximityFarEvent(
+          device: .continuity(Self.deviceID),
+          session: 0,
+          reason: .veryWeakSignal,
+        )
+      )
+    )
 
     await store.finish()
     #expect(store.state.activity.isEmpty)
