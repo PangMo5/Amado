@@ -1270,7 +1270,9 @@ struct AppFeature {
       case .proximityScanToggled(let on):
         // discovered() is subscribed once in `.task`; here we only start/stop the
         // scan and clear the list when the pane closes.
-        if !on { state.proximityDevices = [] }
+        if !on {
+          state.proximityDevices = []
+        }
         return .run { _ in on ? proximityLock.startScanning() : proximityLock.stopScanning() }
 
       case .proximityDevicesUpdated(let devices):

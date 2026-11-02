@@ -95,7 +95,9 @@ private final class WatchPhoneLink: NSObject, WCSessionDelegate, @unchecked Send
     let session = WCSession.default
     guard session.isReachable else { throw PhoneLinkError.phoneUnreachable }
     var message: [String: Any] = [WatchMessage.actionKey: WatchMessage.lockAction]
-    if let macID { message[WatchMessage.macIDKey] = macID.uuidString }
+    if let macID {
+      message[WatchMessage.macIDKey] = macID.uuidString
+    }
     return try await withCheckedThrowingContinuation {
       (continuation: CheckedContinuation<LockCommandResponse.Outcome, Error>) in
       session.sendMessage(
@@ -120,7 +122,7 @@ private final class WatchPhoneLink: NSObject, WCSessionDelegate, @unchecked Send
   func session(
     _ session: WCSession,
     activationDidCompleteWith state: WCSessionActivationState,
-    error: (any Error)?,
+    error: any Error?,
   ) {
     if let error {
       logger.error("activation failed: \(error.localizedDescription, privacy: .public)")

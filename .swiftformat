@@ -1,11 +1,15 @@
+# Airbnb Swift style: https://github.com/airbnb/swift/blob/master/airbnb.swiftformat
+# Synced 2026-11-02; project overrides: generated paths, Swift 6 language mode.
+--min-version 0.64.5
+
 # Exclude checkout directories for common package managers
---exclude Carthage,Pods,.build,Derived,Tuist/.build,.tuist
+--exclude Carthage,Pods,.build,Derived,DerivedData,Tuist/.build,.tuist,.jj
 
 # options
---swift-version 6.2
+--swift-version 6.4
 --language-mode 6
 --self remove # redundantSelf
---import-grouping testable-bottom # sortedImports
+--import-grouping access-control,alpha,attributes-last # sortedImports
 --trailing-commas multi-element-lists # trailingCommas
 --trim-whitespace always # trailingSpace
 --indent 2 #indent
@@ -46,10 +50,13 @@
 --else-position same-line # elseOnSameLine
 --guard-else next-line # elseOnSameLine
 --single-line-for-each convert # preferForLoop
+--single-line-ternary preserve # ifExpressions
 --short-optionals always # typeSugar
 --semicolons never # semicolons
 --doc-comments preserve # docComments
---prefer-synthesized-init-for-internal-structs View,ViewBuilder # redundantMemberwiseInit
+--prefer-synthesized-init-for-internal-structs View,ViewModifier # redundantMemberwiseInit
+--guard-like-if-statements convert # noGuardInTests
+--prefer-content-builder true # contentBuilder
 
 # Customized default modifier order to put `override` after access control
 --modifier-order private,fileprivate,internal,package,public,open,private(set),fileprivate(set),internal(set),package(set),public(set),open(set),override,final,dynamic,optional,required,convenience,indirect,isolated,nonisolated,nonisolated(unsafe),lazy,weak,unowned,unowned(safe),unowned(unsafe),static,class,borrowing,consuming,mutating,nonmutating,prefix,infix,postfix,async # modifierOrder
@@ -69,6 +76,7 @@
 --rules indent
 --rules markTypes
 --rules organizeDeclarations
+--rules redundantBackticks
 --rules redundantParens
 --rules redundantReturn
 --rules redundantSelf
@@ -124,9 +132,12 @@
 --rules sortTypealiases
 --rules preferForLoop
 --rules conditionalAssignment
+--rules ifExpressions
 --rules wrapMultilineConditionalAssignment
 --rules wrapFunctionBodies
 --rules wrapPropertyBodies
+--rules wrapIfStatementBodies
+--rules wrapIfExpressionBodies
 --rules void
 --rules blankLineAfterSwitchCase
 --rules consistentSwitchCaseSpacing
@@ -134,13 +145,22 @@
 --rules propertyTypes
 --rules blankLinesBetweenChainedFunctions
 --rules preferCountWhere
+--rules isEmpty
+--rules preferFlatMap
+--rules preferContains
+--rules preferFirstWhere
+--rules preferLazyMap
+--rules preferMinOverSorted
+--rules preferSwiftStringAPI
 --rules swiftTestingTestCaseNames
 --rules redundantSwiftTestingSuite
+--rules preferStructSwiftTestingSuites
 --rules modifiersOnSameLine
 --rules noForceTryInTests
 --rules noForceUnwrapInTests
 --rules redundantThrows
 --rules redundantAsync
+--rules redundantExtendedLifetime
 --rules noGuardInTests
 --rules testSuiteAccessControl
 --rules validateTestCases
@@ -150,4 +170,5 @@
 --rules preferFinalClasses
 --rules simplifyGenericConstraints
 --rules redundantEmptyView
---rules redundantViewBuilder
+--rules contentBuilder
+--rules redundantSwiftUIGroup

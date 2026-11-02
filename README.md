@@ -143,12 +143,28 @@ See the complete [`config.toml` reference](docs/CONFIGURATION.md),
 
 ## Build from source
 
+Use Xcode 27.2 (Swift 6.4, SDKs 27.2). The project pins Tuist, Ruby, and
+SwiftFormat in `.mise.toml`. Install Xcode at
+`/Applications/Xcode-27.2.0.app`, or set `DEVELOPER_DIR` to its developer
+directory. Tuist rejects other Xcode versions. CI uses the `xcode-27` preview
+runner and explicitly selects Xcode 27.2; its installed build may be an RC
+until the runner image catches up with the local release.
+
 ```sh
 export TUIST_DEVELOPMENT_TEAM=YOUR_TEAM_ID
-mise install
+mise install aqua:tuist/tuist ruby swiftformat
 make bootstrap
-open Amado.xcworkspace
+mise exec -- xcrun xed Amado.xcworkspace
 ```
+
+Use `make format` to apply the Airbnb Swift style and `make format-check` to
+check it without changing files. The configuration follows Airbnb’s upstream
+`airbnb.swiftformat`, with Swift 6 language mode and generated-directory
+exclusions for this project.
+
+Version control uses Jujutsu (`jj`) colocated with Git. For an existing Git
+checkout, run `jj git init --colocate` once, then use `jj status`, `jj diff`,
+and `jj log` to manage changes. Existing Git history and remotes are preserved.
 
 ## Tech stack
 

@@ -108,7 +108,7 @@ enum ProximityDeviceID: Equatable, Hashable, Sendable {
   private static func normalizedClassicAddress(_ rawValue: String) -> String? {
     let components = rawValue
       .lowercased()
-      .replacingOccurrences(of: ":", with: "-")
+      .replacing(":", with: "-")
       .split(separator: "-", omittingEmptySubsequences: false)
     guard
       components.count == 6,

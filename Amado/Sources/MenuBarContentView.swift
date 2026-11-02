@@ -16,112 +16,110 @@ struct MenuBarContentView: View {
   @Bindable var store: StoreOf<AppFeature>
 
   var body: some View {
-    Group {
-      Text(headline)
+    Text(headline)
 
-      if let issue = store.issues.first {
-        Text(issue.detail)
-        IssueRecoveryButton(issue: issue) { store.send(.issueRecoveryTapped(issue.kind)) }
-        // More than one thing can be broken at once; the rest live in Settings
-        // so the menu stays a menu.
-        if store.issues.count > 1 {
-          Text("\(store.issues.count - 1) more issue\(store.issues.count == 2 ? "" : "s") in Settings")
-        }
-        Divider()
+    if let issue = store.issues.first {
+      Text(issue.detail)
+      IssueRecoveryButton(issue: issue) { store.send(.issueRecoveryTapped(issue.kind)) }
+      // More than one thing can be broken at once; the rest live in Settings
+      // so the menu stays a menu.
+      if store.issues.count > 1 {
+        Text("\(store.issues.count - 1) more issue\(store.issues.count == 2 ? "" : "s") in Settings")
       }
-
-      Button("Lock this Mac now") {
-        store.send(.lockNowTapped)
-      }
-
-      Picker(
-        "Caffeinate",
-        selection: Binding(
-          get: { store.config.closedLidMode },
-          set: { store.send(.closedLidModeChanged($0)) },
-        ),
-      ) {
-        ForEach(ClosedLidMode.allCases, id: \.self) { mode in
-          Text(mode.title)
-            .tag(mode)
-        }
-      }
-      .disabled(!store.powerHelperStatus.isReady)
-      if store.isInstallingPowerHelper {
-        Text("Installing Power Helper…")
-      } else if store.powerHelperStatus.canInstall {
-        Button("\(store.powerHelperStatus.installButtonTitle)…") {
-          store.send(.caffeinateInstallHelperTapped)
-        }
-      } else if store.powerHelperStatus == .requiresApproval {
-        Button("Approve Power Helper…") {
-          store.send(.caffeinateHelperSettingsTapped)
-        }
-      }
-      if store.config.closedLidMode.keepsAwake {
-        if store.isApplyingClosedLidMode {
-          Text("Starting Caffeinate…")
-        } else if !isClosedLidPowerIssueAlreadyPresented {
-          Text(store.closedLidStatus.summary)
-        }
-        Label(
-          "Keep ventilated — never use in a bag",
-          systemImage: "exclamationmark.triangle.fill",
-        )
-        .foregroundStyle(.orange)
-      }
-
-      if store.config.proximityAutoLock, store.config.proximityDevice != nil {
-        Menu("Pause Auto-lock") {
-          if let pause = store.activeAutoLockPause {
-            switch pause {
-            case .until(let deadline):
-              Text("Paused until \(deadline.formatted(date: .abbreviated, time: .shortened))")
-            case .whileCaffeinating:
-              Text("Paused while Caffeinate keeps unlocked")
-            }
-            Button("Resume Auto-lock") {
-              store.send(.proximityPauseResumeTapped)
-            }
-          } else {
-            ForEach(AppFeature.ProximityPausePreset.allCases, id: \.self) { preset in
-              Button(preset.title) {
-                store.send(.proximityPausePresetSelected(preset))
-              }
-            }
-          }
-        }
-      }
-
       Divider()
-
-      if store.pairedClients.isEmpty {
-        OpenWindowButton(id: "pairing", title: "Show pairing code…")
-      }
-      OpenWindowButton(id: "settings", title: "Settings…", shortcut: ",")
-      Button("Check for Updates…") {
-        store.send(.checkForUpdatesTapped)
-      }
-
-      Divider()
-
-      if store.activity.isEmpty {
-        Text("No activity yet")
-      } else {
-        Section("Recent") {
-          ForEach(Array(store.activity.prefix(8))) { entry in
-            Text(entry.message)
-          }
-        }
-      }
-
-      Divider()
-
-      Button("Quit Amado") {
-        NSApplication.shared.terminate(nil)
-      }
-      .keyboardShortcut("q")
     }
+
+    Button("Lock this Mac now") {
+      store.send(.lockNowTapped)
+    }
+
+    Picker(
+      "Caffeinate",
+      selection: Binding(
+        get: { store.config.closedLidMode },
+        set: { store.send(.closedLidModeChanged($0)) },
+      ),
+    ) {
+      ForEach(ClosedLidMode.allCases, id: \.self) { mode in
+        Text(mode.title)
+          .tag(mode)
+      }
+    }
+    .disabled(!store.powerHelperStatus.isReady)
+    if store.isInstallingPowerHelper {
+      Text("Installing Power Helper…")
+    } else if store.powerHelperStatus.canInstall {
+      Button("\(store.powerHelperStatus.installButtonTitle)…") {
+        store.send(.caffeinateInstallHelperTapped)
+      }
+    } else if store.powerHelperStatus == .requiresApproval {
+      Button("Approve Power Helper…") {
+        store.send(.caffeinateHelperSettingsTapped)
+      }
+    }
+    if store.config.closedLidMode.keepsAwake {
+      if store.isApplyingClosedLidMode {
+        Text("Starting Caffeinate…")
+      } else if !isClosedLidPowerIssueAlreadyPresented {
+        Text(store.closedLidStatus.summary)
+      }
+      Label(
+        "Keep ventilated — never use in a bag",
+        systemImage: "exclamationmark.triangle.fill",
+      )
+      .foregroundStyle(.orange)
+    }
+
+    if store.config.proximityAutoLock, store.config.proximityDevice != nil {
+      Menu("Pause Auto-lock") {
+        if let pause = store.activeAutoLockPause {
+          switch pause {
+          case .until(let deadline):
+            Text("Paused until \(deadline.formatted(date: .abbreviated, time: .shortened))")
+          case .whileCaffeinating:
+            Text("Paused while Caffeinate keeps unlocked")
+          }
+          Button("Resume Auto-lock") {
+            store.send(.proximityPauseResumeTapped)
+          }
+        } else {
+          ForEach(AppFeature.ProximityPausePreset.allCases, id: \.self) { preset in
+            Button(preset.title) {
+              store.send(.proximityPausePresetSelected(preset))
+            }
+          }
+        }
+      }
+    }
+
+    Divider()
+
+    if store.pairedClients.isEmpty {
+      OpenWindowButton(id: "pairing", title: "Show pairing code…")
+    }
+    OpenWindowButton(id: "settings", title: "Settings…", shortcut: ",")
+    Button("Check for Updates…") {
+      store.send(.checkForUpdatesTapped)
+    }
+
+    Divider()
+
+    if store.activity.isEmpty {
+      Text("No activity yet")
+    } else {
+      Section("Recent") {
+        ForEach(Array(store.activity.prefix(8))) { entry in
+          Text(entry.message)
+        }
+      }
+    }
+
+    Divider()
+
+    Button("Quit Amado") {
+      NSApplication.shared.terminate(nil)
+    }
+    .keyboardShortcut("q")
   }
 
   // MARK: Private

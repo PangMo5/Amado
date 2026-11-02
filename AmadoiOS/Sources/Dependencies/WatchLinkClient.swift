@@ -146,7 +146,7 @@ private final class PhoneWatchLink: NSObject, WCSessionDelegate, @unchecked Send
   func session(
     _ session: WCSession,
     activationDidCompleteWith state: WCSessionActivationState,
-    error: (any Error)?,
+    error: any Error?,
   ) {
     if let error {
       logger.error("activation failed: \(error.localizedDescription, privacy: .public)")

@@ -1,4 +1,4 @@
-// swift-tools-version: 6.0
+// swift-tools-version: 6.4
 
 // SPDX-FileCopyrightText: 2026 PangMo5 and contributors
 // SPDX-License-Identifier: AGPL-3.0-only
@@ -14,38 +14,22 @@ import ProjectDescription
 /// xcframework and is linked (dynamically) only by the macOS agent. Mirrors
 /// the sibling Tatami project.
 let packageSettings = PackageSettings(
-  productTypes: [:],
-  targetSettings: [
-    // Swift 6.3 whole-module compilation crashes while NIOPosix constructs a
-    // ManagedAtomic for BaseSocketChannel on macOS 27. Keep Release
-    // optimization, and remove these overrides after the dependencies or the
-    // compiler resolve it.
-    "Atomics": .settings(configurations: [
-      .release(name: "Release", settings: [
-        "SWIFT_COMPILATION_MODE": "singlefile"
-      ])
-    ]),
-    "NIOPosix": .settings(configurations: [
-      .release(name: "Release", settings: [
-        "SWIFT_COMPILATION_MODE": "singlefile"
-      ])
-    ]),
-  ],
+  productTypes: [:]
 )
 #endif
 
 let package = Package(
   name: "Amado",
   dependencies: [
-    .package(url: "https://github.com/pointfreeco/swift-composable-architecture", from: "1.26.1"),
-    .package(url: "https://github.com/pointfreeco/swift-sharing", from: "2.5.0"),
-    .package(url: "https://github.com/SFSafeSymbols/SFSafeSymbols", from: "5.3.0"),
-    .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.7.0"),
+    .package(url: "https://github.com/pointfreeco/swift-composable-architecture", from: "1.26.2"),
+    .package(url: "https://github.com/pointfreeco/swift-sharing", from: "2.10.1"),
+    .package(url: "https://github.com/SFSafeSymbols/SFSafeSymbols", from: "7.0.0"),
+    .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.10.1"),
     // HTTP server for the Mac agent's tunnel-facing endpoint (remote lock).
     // Linked only by the macOS `Amado` target — clients stay URLSession.
-    .package(url: "https://github.com/hummingbird-project/hummingbird", from: "2.0.0"),
+    .package(url: "https://github.com/hummingbird-project/hummingbird", from: "2.28.1"),
     // TOML config file for the Mac agent (~/.config/amado/config.toml), matching
     // Tatami. macOS-only. Product name is `TOML`.
-    .package(url: "https://github.com/mattt/swift-toml", from: "2.0.0"),
+    .package(url: "https://github.com/mattt/swift-toml", from: "2.1.0"),
   ],
 )

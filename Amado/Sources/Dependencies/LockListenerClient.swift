@@ -5,8 +5,8 @@ import AmadoKit
 import Dependencies
 import DependenciesMacros
 import Foundation
-@preconcurrency import Network
 import OSLog
+@preconcurrency import Network
 
 // MARK: - LockListenerState
 

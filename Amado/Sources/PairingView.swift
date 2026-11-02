@@ -85,7 +85,7 @@ struct PairingView: View {
     .multilineTextAlignment(.center)
   }
 
-  @ViewBuilder
+  @ContentBuilder
   private var qrCode: some View {
     if !store.pairingSecretBase64.isEmpty, let image = PairingQR.image(for: payloadString) {
       Image(decorative: image, scale: 1)

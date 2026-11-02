@@ -65,7 +65,9 @@ struct WatchLockFeature {
         }
 
       case .lockResult(let macID, let message):
-        if state.sendingMacID == macID { state.sendingMacID = nil }
+        if state.sendingMacID == macID {
+          state.sendingMacID = nil
+        }
         state.status = message
         return .none
       }

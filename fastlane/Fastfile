@@ -373,8 +373,7 @@ platform :ios do
 
       configure_tuist_profiles
       Dir.chdir(PROJECT_ROOT) do
-        sh("tuist install")
-        sh("tuist generate --no-open")
+        sh("make install generate")
       end
 
       profile_mapping = lane_context.fetch(SharedValues::MATCH_PROVISIONING_PROFILE_MAPPING)

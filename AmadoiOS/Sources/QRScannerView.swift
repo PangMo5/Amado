@@ -1,10 +1,10 @@
 // SPDX-FileCopyrightText: 2026 PangMo5 and contributors
 // SPDX-License-Identifier: MPL-2.0
 
-@preconcurrency import AVFoundation
 import AVKit
 import SwiftUI
 import UIKit
+@preconcurrency import AVFoundation
 
 // MARK: - QRScannerView
 

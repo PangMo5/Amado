@@ -101,19 +101,29 @@ enum PowerHelperInstallationStatus: Equatable, Sendable {
   }
 
   var isReady: Bool {
-    if case .installed = self { return true }
+    if case .installed = self {
+      return true
+    }
     return false
   }
 
   var installButtonTitle: String {
-    if case .updateAvailable = self { return "Update Power Helper" }
-    if case .installationFailed = self { return "Try Install Again" }
+    if case .updateAvailable = self {
+      return "Update Power Helper"
+    }
+    if case .installationFailed = self {
+      return "Try Install Again"
+    }
     return "Install Power Helper"
   }
 
   var diagnostic: String {
-    if case .installationFailed(let reason) = self { return reason }
-    if case .failed(let reason, _) = self { return reason }
+    if case .installationFailed(let reason) = self {
+      return reason
+    }
+    if case .failed(let reason, _) = self {
+      return reason
+    }
     return summary
   }
 }
@@ -420,21 +430,21 @@ private actor ClosedLidController {
   private func caffeinateReadiness() -> ClosedLidControlStatus {
     switch helperService.status {
     case .enabled:
-      return .active
+      .active
 
     case .requiresApproval:
-      return .requiresApproval
+      .requiresApproval
 
     case .notRegistered:
-      return .helperNotInstalled
+      .helperNotInstalled
 
     case .notFound:
-      return bundledHelperIsPresent
+      bundledHelperIsPresent
         ? .helperNotInstalled
         : .failed("The bundled Power Helper is missing")
 
     @unknown default:
-      return .failed("macOS returned an unknown Power Helper state")
+      .failed("macOS returned an unknown Power Helper state")
     }
   }
 
@@ -498,7 +508,9 @@ private actor ClosedLidController {
   }
 
   private func makeConnection() -> NSXPCConnection? {
-    if let connection { return connection }
+    if let connection {
+      return connection
+    }
     guard
       let requirement = PowerHelperCodeSigning.sameTeamRequirement(
         identifiers: [PowerHelperConstants.helperIdentifier]
@@ -620,7 +632,9 @@ private final class BuiltinDisplayBacklight: @unchecked Sendable {
   }
 
   deinit {
-    if let framework { dlclose(framework) }
+    if let framework {
+      dlclose(framework)
+    }
   }
 
   // MARK: Internal
@@ -777,9 +791,15 @@ private final class LidMonitor: @unchecked Sendable {
   }
 
   deinit {
-    if notification != 0 { IOObjectRelease(notification) }
-    if rootDomain != 0 { IOObjectRelease(rootDomain) }
-    if let notificationPort { IONotificationPortDestroy(notificationPort) }
+    if notification != 0 {
+      IOObjectRelease(notification)
+    }
+    if rootDomain != 0 {
+      IOObjectRelease(rootDomain)
+    }
+    if let notificationPort {
+      IONotificationPortDestroy(notificationPort)
+    }
     continuation.finish()
   }
 

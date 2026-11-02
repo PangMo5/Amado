@@ -340,7 +340,7 @@ struct ProximityDeviceCatalog: Sendable {
   }
 
   func nextNearbyExpiry(nearbyTTL: TimeInterval) -> Date? {
-    nearby.values.map { $0.at.addingTimeInterval(nearbyTTL) }.min()
+    nearby.values.lazy.map { $0.at.addingTimeInterval(nearbyTTL) }.min()
   }
 
   // MARK: Private
@@ -360,7 +360,9 @@ struct ProximityDeviceCatalog: Sendable {
     case (.none, .some):
       return false
     default:
-      if lhs.name != rhs.name { return lhs.name < rhs.name }
+      if lhs.name != rhs.name {
+        return lhs.name < rhs.name
+      }
       return lhs.id.rawValue < rhs.id.rawValue
     }
   }
@@ -662,7 +664,9 @@ private final class ProximityEngine: NSObject,
     }
 
     guard monitoredDevice == .continuity(peripheral.identifier) else { return }
-    if monitoredPeripheral == nil { monitoredPeripheral = peripheral }
+    if monitoredPeripheral == nil {
+      monitoredPeripheral = peripheral
+    }
     if !active, ProximityRSSI.continuity(rssi) != nil {
       ingest(rssi)
       connectMonitored()
@@ -686,7 +690,9 @@ private final class ProximityEngine: NSObject,
   func centralManager(_: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error _: Error?) {
     guard monitoredDevice == .continuity(peripheral.identifier) else { return }
     active = false
-    if case .continuity = monitoredDevice { connectMonitored() } // reconnect when back in range
+    if case .continuity = monitoredDevice {
+      connectMonitored()
+    } // reconnect when back in range
   }
 
   func peripheral(_ peripheral: CBPeripheral, didReadRSSI RSSI: NSNumber, error: Error?) {
@@ -988,7 +994,9 @@ private final class ProximityEngine: NSObject,
   }
 
   private func ensureManager() {
-    if central == nil { central = CBCentralManager(delegate: self, queue: queue) }
+    if central == nil {
+      central = CBCentralManager(delegate: self, queue: queue)
+    }
   }
 
   private func reacquireMonitored() {
@@ -1038,7 +1046,9 @@ private final class ProximityEngine: NSObject,
         central?.cancelPeripheralConnection(peripheral)
         active = false // fall back to the passive scan-RSSI path
       } else {
-        if peripheral.state == .connected { peripheral.readRSSI() }
+        if peripheral.state == .connected {
+          peripheral.readRSSI()
+        }
         schedulePoll(peripheral)
       }
     }
@@ -1378,7 +1388,9 @@ private final class ProximityEngine: NSObject,
       }
 
     case .retry:
-      if classicLinkCoordinator.active?.address == attempt.address { return }
+      if classicLinkCoordinator.active?.address == attempt.address {
+        return
+      }
       if timedOut {
         classicReconnectAttempt = 0
         emitStatus(.connectionUnavailable)
@@ -1493,7 +1505,9 @@ private final class ProximityEngine: NSObject,
     classicDisconnectNotification = nil
     classicDisconnectObserver = nil
     classicLinkCoordinator.invalidate()
-    if let central, let peripheral = monitoredPeripheral { central.cancelPeripheralConnection(peripheral) }
+    if let central, let peripheral = monitoredPeripheral {
+      central.cancelPeripheralConnection(peripheral)
+    }
     if let link = ownedClassicLink, let device = ownedClassicDevice {
       closeClassicConnectionOpenedByAmado(
         device,
