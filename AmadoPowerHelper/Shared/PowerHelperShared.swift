@@ -139,7 +139,7 @@ enum PowerHelperCodeSigning {
   static func sameTeamRequirement(identifiers: [String]) -> String? {
     guard let teamIdentifier = currentTeamIdentifier(), !identifiers.isEmpty else { return nil }
     let identifiers = identifiers
-      .map { "identifier \"\($0)\"" }
+      .lazy.map { "identifier \"\($0)\"" }
       .joined(separator: " or ")
     return "anchor apple generic and certificate leaf[subject.OU] = \"\(teamIdentifier)\" "
       + "and (\(identifiers))"

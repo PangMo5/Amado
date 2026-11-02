@@ -48,10 +48,13 @@ previous secret and clears its paired-device registry.
 ## Bluetooth proximity
 
 Bluetooth proximity auto-lock runs on the Mac. The Mac observes the selected
-iPhone's Bluetooth signal to decide when to lock. Keyboard, pointer, and
-trackpad activity is not observed or used by proximity auto-lock. Amado does
-not use location services, collect a location history, persist proximity
-observations, or send Bluetooth observations to PangMo5.
+phone's Bluetooth signal to decide when to lock. Continuity selections store a
+Mac-local Core Bluetooth UUID. Experimental paired-Bluetooth selections store
+the device's normalized Classic address and cached display name in local
+`config.toml`; macOS already retains the underlying system pairing. Keyboard,
+pointer, and trackpad activity is not observed or used by proximity auto-lock.
+Amado does not use location services, collect a location history, persist RSSI
+observations, or send Bluetooth observations or identifiers to PangMo5.
 
 ## Caffeinate
 

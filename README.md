@@ -20,7 +20,9 @@ Caffeinate.
 - **One tap, everywhere:** Lock from the iPhone app, Apple Watch, a Home
   Screen widget, or Control Center.
 - **Automatic when you leave:** Bluetooth proximity lets the Mac lock itself
-  when you walk away with your iPhone. Smart detection is the default; Manual
+  when you walk away with your selected phone. iPhone uses app-free Continuity;
+  an experimental paired-Bluetooth path can use Classic RSSI from Android and
+  other devices when macOS exposes it. Smart detection is the default; Manual
   mode keeps direct RSSI, delay, and smoothing controls.
 - **Caffeinate when you close the lid:** Keep a MacBook running closed with a
   user-approved Power Helper. Choose whether the login session locks, or keep
@@ -67,7 +69,7 @@ Caffeinate.
 Apple Watch ── WatchConnectivity ──▶ iPhone ─┬─ Bonjour + TCP ───────▶ Mac
 Widget / Control Center / iPhone app ────────┤
                                              └─ HTTPS tunnel ───────▶ Mac
-Nearby iPhone ───────── Bluetooth proximity ────────────────────────▶ Mac
+Selected phone ──────── Bluetooth proximity ────────────────────────▶ Mac
 MacBook lid ─────────── Caffeinate + Power Helper ─────────▶ Mac stays awake
 ```
 
@@ -77,7 +79,7 @@ loopback-only HTTP listener on `127.0.0.1:51521`. Use a control when you want an
 immediate lock. The same authenticated connection returns the Mac's observed
 lock state, and the iPhone app can refresh that state on demand. Enable
 proximity auto-lock when you want walking away to be enough; it runs on the Mac
-and does not require the iPhone app to stay open. The Mac also keeps a local
+and does not require a companion phone app. The Mac also keeps a local
 list of paired iPhones. Removing a pairing from either side is synchronized the
 next time the devices connect. Stable UUIDs identify each installation
 independently of its displayed name.
@@ -105,7 +107,10 @@ iPhone app, widget, and Watch app are distributed together through TestFlight.
 2. Open **Settings › Pairing › Reveal pairing code**.
 3. In the iPhone app, scan the QR code.
 4. Use the app, widget, Control Center control, or Watch app to lock the Mac.
-5. Optionally enable **Auto-lock** so leaving with the iPhone locks it for you.
+5. Optionally enable **Auto-lock** so leaving with the selected phone locks it
+   for you. Pair Android devices in macOS System Settings first and verify that
+   Settings reports a live negative RSSI before relying on the experimental
+   paired-Bluetooth path.
 6. Optionally open **Caffeinate**, explicitly install and approve the Power
    Helper, wait for its status to become **Installed**, then choose an awake
    policy.
@@ -121,9 +126,10 @@ reloaded when the file changes. Pairing secrets stay in Keychain.
 | `mac_id` | generated once | Stable Mac identity shared with paired clients |
 | `remote_host` | `""` | Public hostname of your HTTPS tunnel. Empty is LAN-only. |
 | `caffeinate_mode` | `"off"` | `"off"`, `"lock"`, or `"unlocked"` behavior when the lid closes |
-| `proximity_auto_lock` | `false` | Lock when the selected iPhone leaves |
+| `proximity_auto_lock` | `false` | Lock when the selected phone leaves |
 | `caffeinate_pauses_auto_lock` | `false` | Pause Auto-lock while Caffeinate keeps the Mac unlocked |
 | `proximity_pause_until` | omitted | Unix timestamp when a temporary pause ends |
+| `proximity_device_transport` | `"continuity"` | `"continuity"` or experimental `"classic"` identity and connection path |
 | `proximity_mode` | `"smart"` | Adaptive detection, or `"manual"` for direct RSSI controls |
 | `proximity_sensitivity` | `"balanced"` | Smart-mode reaction preset |
 | `proximity_far_rssi` | `-56` | Manual-mode far threshold in dBm |
@@ -137,12 +143,28 @@ See the complete [`config.toml` reference](docs/CONFIGURATION.md),
 
 ## Build from source
 
+Use Xcode 27.2 (Swift 6.4, SDKs 27.2). The project pins Tuist, Ruby, and
+SwiftFormat in `.mise.toml`. Install Xcode at
+`/Applications/Xcode-27.2.0.app`, or set `DEVELOPER_DIR` to its developer
+directory. Tuist rejects other Xcode versions. CI uses the `xcode-27` preview
+runner and explicitly selects Xcode 27.2; its installed build may be an RC
+until the runner image catches up with the local release.
+
 ```sh
 export TUIST_DEVELOPMENT_TEAM=YOUR_TEAM_ID
-mise install
+mise install aqua:tuist/tuist ruby swiftformat
 make bootstrap
-open Amado.xcworkspace
+mise exec -- xcrun xed Amado.xcworkspace
 ```
+
+Use `make format` to apply the Airbnb Swift style and `make format-check` to
+check it without changing files. The configuration follows Airbnb’s upstream
+`airbnb.swiftformat`, with Swift 6 language mode and generated-directory
+exclusions for this project.
+
+Version control uses Jujutsu (`jj`) colocated with Git. For an existing Git
+checkout, run `jj git init --colocate` once, then use `jj status`, `jj diff`,
+and `jj log` to manage changes. Existing Git history and remotes are preserved.
 
 ## Tech stack
 

@@ -56,6 +56,66 @@ struct AmadoConfigTests {
     #expect(decoded.closedLidMode == .off)
   }
 
+  @Test
+  func `Existing proximity selection without transport remains Continuity`() throws {
+    let deviceID = try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000123"))
+    let decoded = try TOMLDecoder().decode(
+      AmadoConfig.self,
+      from: "proximity_device_id = \"\(deviceID.uuidString)\"",
+    )
+
+    #expect(decoded.proximityDeviceTransport == .continuity)
+    #expect(decoded.proximityDevice == .continuity(deviceID))
+  }
+
+  @Test
+  func `Classic proximity selection round trips through TOML`() throws {
+    let expected = AmadoConfig(
+      proximityAutoLock: true,
+      proximityDeviceTransport: .classic,
+      proximityDeviceID: "aa-bb-cc-dd-ee-ff",
+      proximityDeviceName: "Pixel",
+    )
+
+    let encoded = try TOMLEncoder().encode(expected)
+    let encodedText = String(decoding: encoded, as: UTF8.self)
+    let decoded = try TOMLDecoder().decode(AmadoConfig.self, from: encoded)
+
+    #expect(encodedText.contains("proximity_device_transport = \"classic\""))
+    #expect(decoded == expected)
+    #expect(decoded.proximityDevice == .classic("aa-bb-cc-dd-ee-ff"))
+  }
+
+  @Test
+  func `Classic address accepts colon separators and normalizes case`() {
+    let device = ProximityDeviceID(
+      transport: .classic,
+      rawValue: "AA:BB:CC:DD:EE:FF",
+    )
+
+    #expect(device == .classic("aa-bb-cc-dd-ee-ff"))
+  }
+
+  @Test
+  func `Invalid selected device stays inactive`() {
+    #expect(
+      AmadoConfig(
+        proximityDeviceTransport: .classic,
+        proximityDeviceID: "not-an-address",
+      ).proximityDevice == nil
+    )
+  }
+
+  @Test
+  func `Present invalid proximity transport rejects the config`() {
+    #expect(throws: DecodingError.self) {
+      try TOMLDecoder().decode(
+        AmadoConfig.self,
+        from: "proximity_device_transport = \"unknown\"",
+      )
+    }
+  }
+
   @Test(arguments: ClosedLidMode.allCases)
   func `Closed lid mode round trips through TOML`(_ mode: ClosedLidMode) throws {
     let expected = AmadoConfig(closedLidMode: mode)

@@ -4,6 +4,8 @@ Notable changes to the Amado macOS app are documented here. Versions follow sema
 
 ## Unreleased
 
+- Added an experimental app-free Android path that lists system-paired Bluetooth devices, shows live dBm for connected entries, and feeds usable Classic RSSI into the existing Smart or Manual proximity engine. After valid nearby samples arm detection, ordinary link loss enters conservative signal-loss confirmation; radio, sleep, configuration, and pre-arming failures remain fail-open, and stale events from a previously selected device cannot lock the Mac.
+
 ## 2.0.3 (2026-08-24)
 
 - Added one context-sensitive confirmation before Caffeinate can keep the login session unlocked. It combines operational and security warnings when needed, exposes Auto-lock keep/pause choices as buttons in the same dialog, and keeps persistent warnings about physical access, existing remote-control software, and exposed session data.

@@ -211,6 +211,25 @@ struct ProximityDecisionEngineTests {
   }
 
   @Test
+  func `Trusted disconnect starts a fresh strong-signal loss window`() {
+    var result = makeArmedSmartEngine()
+    let disconnectAt: TimeInterval = 100
+
+    let firstLossCheck = result.engine.signalLost(
+      at: disconnectAt + 30,
+      lossBeganAt: disconnectAt,
+    )
+    let extendedLossCheck = result.engine.signalLost(
+      at: disconnectAt + 90,
+      lossBeganAt: disconnectAt,
+    )
+
+    #expect(firstLossCheck.lockReason == nil)
+    #expect(firstLossCheck.snapshot.phase == .signalLost)
+    #expect(extendedLossCheck.lockReason == .extendedSignalLoss)
+  }
+
+  @Test
   func `Signal loss after weakening confirms the departure`() {
     var result = makeArmedSmartEngine()
 

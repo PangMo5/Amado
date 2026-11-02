@@ -77,7 +77,7 @@ extension CaffeinatePromptClient: DependencyKey {
         if autoLockEnabled {
           paragraphs.append(
             String(
-              localized: "Auto-lock is currently on. Keep it on for additional protection, or pause it while Caffeinate keeps the Mac unlocked. Pausing means Amado will not lock the Mac when your iPhone leaves.",
+              localized: "Auto-lock is currently on. Keep it on for additional protection, or pause it while Caffeinate keeps the Mac unlocked. Pausing means Amado will not lock the Mac when your selected phone leaves.",
               comment: "Auto-lock choices within Caffeinate's unlocked-policy confirmation.",
             )
           )

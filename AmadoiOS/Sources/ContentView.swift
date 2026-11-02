@@ -110,7 +110,7 @@ struct ContentView: View {
 
   @State private var isScanning = false
 
-  private let macAppURL = URL(string: "https://pangmo5.dev/Amado/")!
+  private let macAppURL = URL(string: "https://amado.pangmo5.dev/")!
 
   private var controlCenterDetail: LocalizedStringResource {
     guard
@@ -133,7 +133,7 @@ struct ContentView: View {
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
-          Button("Cancel") { isScanning = false }
+          Button("Cancel", systemImage: "xmark") { isScanning = false }
         }
       }
     }

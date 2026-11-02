@@ -118,75 +118,73 @@ struct SettingsView: View {
     }
   }
 
+  @ContentBuilder
   private var generalPane: some View {
-    Group {
-      MacIdentitySection(
-        name: store.macIdentity?.name ?? "Mac",
-        deviceID: store.config.macID,
+    MacIdentitySection(
+      name: store.macIdentity?.name ?? "Mac",
+      deviceID: store.config.macID,
+    )
+    AgentIssuesSection(store: store)
+    Section {
+      Toggle(
+        "Launch at Login",
+        isOn: Binding(
+          get: { store.launchAtLogin },
+          set: { store.send(.launchAtLoginToggled($0)) },
+        ),
       )
-      AgentIssuesSection(store: store)
-      Section {
-        Toggle(
-          "Launch at Login",
-          isOn: Binding(
-            get: { store.launchAtLogin },
-            set: { store.send(.launchAtLoginToggled($0)) },
-          ),
-        )
-        LabeledContent("Status", value: statusLine)
-      }
-      Section {
-        Button("Lock this Mac now") { store.send(.lockNowTapped) }
-      } footer: {
-        Text("Locks immediately — mainly to test the agent.")
-      }
+      LabeledContent("Status", value: statusLine)
+    }
+    Section {
+      Button("Lock this Mac now") { store.send(.lockNowTapped) }
+    } footer: {
+      Text("Locks immediately — mainly to test the agent.")
     }
   }
 
+  @ContentBuilder
   private var remotePane: some View {
-    Group {
-      Section {
-        TextField(
-          "amado.example.com",
-          text: Binding(
-            get: { store.config.remoteHost },
-            set: { store.send(.remoteHostChanged($0)) },
-          ),
-        )
-        .textFieldStyle(.roundedBorder)
-        .autocorrectionDisabled()
-      } header: {
-        Text("Tunnel host")
-      } footer: {
-        Text(
-          "Public hostname of a tunnel you run on this Mac (Cloudflare Tunnel, "
-            + "Tailscale Funnel, ngrok…) forwarding to 127.0.0.1:\(AmadoService.localHTTPPort). "
-            + "Leave empty for LAN-only. See the configuration guide on the Amado website."
-        )
-      }
-      Section {
-        Button {
-          store.send(.testRemoteTapped)
-        } label: {
-          if store.remoteTesting {
-            ProgressView().controlSize(.small)
-          } else {
-            Text("Test connection")
-          }
+    Section {
+      TextField(
+        "amado.example.com",
+        text: Binding(
+          get: { store.config.remoteHost },
+          set: { store.send(.remoteHostChanged($0)) },
+        ),
+      )
+      .textFieldStyle(.roundedBorder)
+      .autocorrectionDisabled()
+    } header: {
+      Text("Tunnel host")
+    } footer: {
+      Text(
+        "Public hostname of a tunnel you run on this Mac (Cloudflare Tunnel, "
+          + "Tailscale Funnel, ngrok…) forwarding to 127.0.0.1:\(AmadoService.localHTTPPort). "
+          + "Leave empty for LAN-only. See the configuration guide on the Amado website."
+      )
+    }
+    Section {
+      Button {
+        store.send(.testRemoteTapped)
+      } label: {
+        if store.remoteTesting {
+          ProgressView().controlSize(.small)
+        } else {
+          Text("Test connection")
         }
-        .disabled(store.config.remoteHost.isEmpty || store.remoteTesting)
-        if !store.remoteTestMessage.isEmpty {
-          Text(store.remoteTestMessage)
-            .font(.callout)
-            .foregroundStyle(.secondary)
-        }
-      } footer: {
-        Text("Checks that your tunnel reaches this Mac’s agent.")
       }
+      .disabled(store.config.remoteHost.isEmpty || store.remoteTesting)
+      if !store.remoteTestMessage.isEmpty {
+        Text(store.remoteTestMessage)
+          .font(.callout)
+          .foregroundStyle(.secondary)
+      }
+    } footer: {
+      Text("Checks that your tunnel reaches this Mac’s agent.")
     }
   }
 
-  @ViewBuilder
+  @ContentBuilder
   private var pairingPane: some View {
     if !store.pairedClients.isEmpty {
       Section {
@@ -287,121 +285,129 @@ private struct CaffeinateSettingsPane: View {
   let store: StoreOf<AppFeature>
 
   var body: some View {
-    Group {
-      Section {
-        Picker(
-          "When the lid closes",
-          selection: Binding(
-            get: { store.config.closedLidMode },
-            set: { store.send(.closedLidModeChanged($0)) },
-          ),
-        ) {
-          ForEach(ClosedLidMode.allCases, id: \.self) { mode in
-            Text(mode.title)
-              .tag(mode)
-          }
+    Section {
+      Picker(
+        "When the lid closes",
+        selection: Binding(
+          get: { store.config.closedLidMode },
+          set: { store.send(.closedLidModeChanged($0)) },
+        ),
+      ) {
+        ForEach(ClosedLidMode.allCases, id: \.self) { mode in
+          Text(mode.title)
+            .tag(mode)
         }
-        .disabled(!store.powerHelperStatus.isReady)
+      }
+      .disabled(!store.powerHelperStatus.isReady)
 
-        if store.config.closedLidMode.keepsAwake {
-          Label(
-            "Caffeinate disables normal lid-close sleep. Use this Mac only on a hard, stable, "
-              + "well-ventilated surface—never in a bag, bedding, or enclosed space. You are "
-              + "responsible for monitoring heat and battery.",
-            systemSymbol: .exclamationmarkTriangleFill,
-          )
-          .foregroundStyle(.orange)
-          .fixedSize(horizontal: false, vertical: true)
-          .accessibilityElement(children: .combine)
-        }
-
-        if store.config.closedLidMode == .unlocked {
-          Label(
-            "Caffeinate does not lock the login session when the lid closes. Anyone with physical access—or access through remote-control software already enabled on this Mac—may be able to use the session and access its data.",
-            systemSymbol: .exclamationmarkTriangleFill,
-          )
-          .foregroundStyle(.orange)
-          .fixedSize(horizontal: false, vertical: true)
-          .accessibilityElement(children: .combine)
-        }
-      } header: {
-        Text("Behavior")
+      if store.config.closedLidMode.keepsAwake {
+        Label(
+          "Caffeinate disables normal lid-close sleep. Use this Mac only on a hard, stable, "
+            + "well-ventilated surface—never in a bag, bedding, or enclosed space. You are "
+            + "responsible for monitoring heat and battery.",
+          systemSymbol: .exclamationmarkTriangleFill,
+        )
+        .foregroundStyle(.orange)
+        .fixedSize(horizontal: false, vertical: true)
+        .accessibilityElement(children: .combine)
       }
 
-      Section {
-        LabeledContent(
-          "Installation",
-          value: helperStatusSummary,
+      if store.config.closedLidMode == .unlocked {
+        Label(
+          "Caffeinate does not lock the login session when the lid closes. Anyone with physical access—or access through remote-control software already enabled on this Mac—may be able to use the session and access its data.",
+          systemSymbol: .exclamationmarkTriangleFill,
         )
-        LabeledContent(
-          "Caffeinate status",
-          value: statusSummary,
-        )
-        if
-          store.config.closedLidMode.keepsAwake,
-          !store.isApplyingClosedLidMode,
-          !store.isRemovingPowerHelper,
-          store.closedLidStatus != .active
-        {
-          Button("Try Again") { store.send(.closedLidRetryTapped) }
-        }
-        HStack {
-          Button(store.powerHelperStatus.installButtonTitle) {
-            store.send(.caffeinateInstallHelperTapped)
-          }
-          .disabled(!store.powerHelperStatus.canInstall || isHelperBusy)
+        .foregroundStyle(.orange)
+        .fixedSize(horizontal: false, vertical: true)
+        .accessibilityElement(children: .combine)
+      }
+    } header: {
+      Text("Behavior")
+    }
 
-          Button("Remove Power Helper…", role: .destructive) {
-            store.send(.caffeinateRemoveHelperTapped)
-          }
-          .disabled(!store.powerHelperStatus.canRemove || isHelperBusy)
+    Section {
+      LabeledContent(
+        "Installation",
+        value: helperStatusSummary,
+      )
+      LabeledContent(
+        "Caffeinate status",
+        value: statusSummary,
+      )
+      if
+        store.config.closedLidMode.keepsAwake,
+        !store.isApplyingClosedLidMode,
+        !store.isRemovingPowerHelper,
+        store.closedLidStatus != .active
+      {
+        Button("Try Again") { store.send(.closedLidRetryTapped) }
+      }
+      HStack {
+        Button(store.powerHelperStatus.installButtonTitle) {
+          store.send(.caffeinateInstallHelperTapped)
         }
+        .disabled(!store.powerHelperStatus.canInstall || isHelperBusy)
 
-        if store.powerHelperStatus == .requiresApproval {
-          Button("Open Login Items & Extensions…") {
-            store.send(.caffeinateHelperSettingsTapped)
-          }
-          Button("Check Again") {
-            store.send(.caffeinateHelperStatusRefreshTapped)
-          }
-          .disabled(isHelperBusy)
+        Button("Remove Power Helper…", role: .destructive) {
+          store.send(.caffeinateRemoveHelperTapped)
         }
-      } header: {
-        Text("Power Helper")
-      } footer: {
-        Text(
-          "Amado uses a narrowly scoped Power Helper to keep macOS running after the MacBook lid closes. "
-            + "Install it explicitly before enabling Caffeinate; macOS may ask an administrator to approve "
-            + "it in Login Items & Extensions. The helper restores normal sleep if Amado disconnects. "
-            + "Removing it turns Caffeinate off."
-        )
+        .disabled(!store.powerHelperStatus.canRemove || isHelperBusy)
       }
 
-      Section {
-        Text(
-          "Both awake policies turn off the built-in display: the lock policy uses display sleep, "
-            + "while the unlocked policy turns off only the built-in backlight and restores its "
-            + "previous brightness when the lid opens."
-        )
-        .foregroundStyle(.secondary)
-      } header: {
-        Text("Display behavior")
+      if store.powerHelperStatus == .requiresApproval {
+        Button("Open Login Items & Extensions…") {
+          store.send(.caffeinateHelperSettingsTapped)
+        }
+        Button("Check Again") {
+          store.send(.caffeinateHelperStatusRefreshTapped)
+        }
+        .disabled(isHelperBusy)
       }
+    } header: {
+      Text("Power Helper")
+    } footer: {
+      Text(
+        "Amado uses a narrowly scoped Power Helper to keep macOS running after the MacBook lid closes. "
+          + "Install it explicitly before enabling Caffeinate; macOS may ask an administrator to approve "
+          + "it in Login Items & Extensions. The helper restores normal sleep if Amado disconnects. "
+          + "Removing it turns Caffeinate off."
+      )
+    }
+
+    Section {
+      Text(
+        "Both awake policies turn off the built-in display: the lock policy uses display sleep, "
+          + "while the unlocked policy turns off only the built-in backlight and restores its "
+          + "previous brightness when the lid opens."
+      )
+      .foregroundStyle(.secondary)
+    } header: {
+      Text("Display behavior")
     }
   }
 
   // MARK: Private
 
   private var statusSummary: String {
-    if store.isRemovingPowerHelper { return "Removing…" }
-    if store.isApplyingClosedLidMode { return "Starting…" }
+    if store.isRemovingPowerHelper {
+      return "Removing…"
+    }
+    if store.isApplyingClosedLidMode {
+      return "Starting…"
+    }
     return store.closedLidStatus.summary
   }
 
   private var helperStatusSummary: String {
-    if store.isInstallingPowerHelper { return "Installing…" }
-    if store.isRefreshingPowerHelper { return "Checking…" }
-    if store.isRemovingPowerHelper { return "Removing…" }
+    if store.isInstallingPowerHelper {
+      return "Installing…"
+    }
+    if store.isRefreshingPowerHelper {
+      return "Checking…"
+    }
+    if store.isRemovingPowerHelper {
+      return "Removing…"
+    }
     return store.powerHelperStatus.summary
   }
 
@@ -585,8 +591,8 @@ private struct AboutSection: View {
 
   private static let creatorURL = URL(string: "https://github.com/PangMo5")!
   private static let repositoryURL = URL(string: "https://github.com/PangMo5/Amado")!
-  private static let releaseNotesURL = URL(string: "https://pangmo5.dev/Amado/releases.html")!
-  private static let privacyURL = URL(string: "https://pangmo5.dev/Amado/privacy.html")!
+  private static let releaseNotesURL = URL(string: "https://amado.pangmo5.dev/releases.html")!
+  private static let privacyURL = URL(string: "https://amado.pangmo5.dev/privacy.html")!
 
   private static let acknowledgements: [(name: String, url: URL)] = [
     (
@@ -728,7 +734,7 @@ private struct ProximitySettingsPane: View {
     Group {
       Section {
         Toggle(
-          "Auto-lock when my iPhone leaves",
+          "Auto-lock when my phone leaves",
           isOn: Binding(
             get: { store.config.proximityAutoLock },
             set: { store.send(.proximityAutoLockToggled($0)) },
@@ -737,13 +743,11 @@ private struct ProximitySettingsPane: View {
         LabeledContent("Status", value: proximityStatusLine)
       } footer: {
         Text(
-          "This Mac senses your iPhone over Bluetooth and locks when it leaves — no app on the phone. "
-            + "Sign your iPhone into the same iCloud account so this Mac can recognize it across its "
-            + "rotating Bluetooth address."
+          "iPhone can use its app-free Continuity signal. Android and other devices must first be paired in System Settings; Amado keeps them fail-safe when macOS cannot provide usable signal strength."
         )
       }
 
-      if store.config.proximityAutoLock, !store.config.proximityDeviceID.isEmpty {
+      if store.config.proximityAutoLock, store.config.proximityDevice != nil {
         ProximityPauseSection(store: store)
       }
 
@@ -753,13 +757,25 @@ private struct ProximitySettingsPane: View {
             store.send(.proximityDeviceSelected(device))
           } label: {
             HStack {
-              Image(systemSymbol: .iphone).foregroundStyle(.secondary)
-              Text(device.name)
-              Spacer()
-              Text("\(device.rssi) dBm")
-                .font(.caption.monospacedDigit())
+              Image(systemSymbol: symbol(for: device.id.transport))
                 .foregroundStyle(.secondary)
-              if device.id.uuidString == store.config.proximityDeviceID {
+              VStack(alignment: .leading, spacing: 2) {
+                Text(device.name)
+                Text(label(for: device.id.transport))
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+              }
+              Spacer()
+              if let rssi = device.rssi {
+                Text("\(rssi) dBm")
+                  .font(.caption.monospacedDigit())
+                  .foregroundStyle(.secondary)
+              } else {
+                Text("Paired")
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+              }
+              if device.id == store.config.proximityDevice {
                 Image(systemSymbol: .checkmark).foregroundStyle(.tint)
               }
             }
@@ -775,7 +791,9 @@ private struct ProximitySettingsPane: View {
       } header: {
         Text("Device")
       } footer: {
-        Text("Pick your iPhone — hold it next to this Mac so it shows the strongest signal.")
+        Text(
+          "Keep the phone beside this Mac. Connected paired devices show live RSSI; disconnected devices remain listed as Paired."
+        )
       }
 
       Section {
@@ -810,7 +828,7 @@ private struct ProximitySettingsPane: View {
           }
           .disabled(
             !store.config.proximityAutoLock
-              || store.config.proximityDeviceID.isEmpty
+              || store.config.proximityDevice == nil
               || store.activeAutoLockPause != nil
           )
         } else {
@@ -821,9 +839,7 @@ private struct ProximitySettingsPane: View {
       } footer: {
         if store.config.proximityMode == .smart {
           Text(
-            "Smart mode combines fast and stable signal filters, weak-signal consistency, departure trend, "
-              + "and duration. Keyboard or pointer input cannot delay locking. Recalibrate with the iPhone "
-              + "nearby after moving the Mac or changing where you normally keep the phone."
+            "Smart mode combines fast and stable signal filters, weak-signal consistency, departure trend, and duration. Keyboard or pointer input cannot delay locking. Recalibrate with the selected phone nearby after moving the Mac or changing where you normally keep the phone."
           )
         } else {
           Text(
@@ -839,55 +855,56 @@ private struct ProximitySettingsPane: View {
 
   // MARK: Private
 
+  @ContentBuilder
   private var manualControls: some View {
-    Group {
-      Slider(
-        value: Binding(
-          get: { Double(store.config.proximityFarRSSI) },
-          set: { store.send(.proximityFarRSSIChanged(Int($0.rounded()))) },
-        ),
-        in: -90.0 ... -40.0,
-        step: 1,
-      ) {
-        Text("Lock threshold: \(store.config.proximityFarRSSI) dBm")
-      } minimumValueLabel: {
-        Text("Farther").font(.caption)
-      } maximumValueLabel: {
-        Text("Closer").font(.caption)
-      }
-      Picker(
-        "Lock delay",
-        selection: Binding(
-          get: { store.config.proximityGraceSeconds },
-          set: { store.send(.proximityGraceChanged($0)) },
-        ),
-      ) {
-        Text("Instant").tag(0.0)
-        Text("1 second").tag(1.0)
-        Text("2 seconds").tag(2.0)
-        Text("3 seconds").tag(3.0)
-        Text("5 seconds").tag(5.0)
-      }
-      Slider(
-        value: Binding(
-          get: { Double(store.config.proximitySmoothing) },
-          set: { store.send(.proximitySmoothingChanged(Int($0.rounded()))) },
-        ),
-        in: 1.0 ... 8.0,
-        step: 1,
-      ) {
-        Text("Smoothing: \(store.config.proximitySmoothing) samples")
-      } minimumValueLabel: {
-        Text("Snappy").font(.caption)
-      } maximumValueLabel: {
-        Text("Smooth").font(.caption)
-      }
+    Slider(
+      value: Binding(
+        get: { Double(store.config.proximityFarRSSI) },
+        set: { store.send(.proximityFarRSSIChanged(Int($0.rounded()))) },
+      ),
+      in: -90.0 ... -40.0,
+      step: 1,
+    ) {
+      Text("Lock threshold: \(store.config.proximityFarRSSI) dBm")
+    } minimumValueLabel: {
+      Text("Farther").font(.caption)
+    } maximumValueLabel: {
+      Text("Closer").font(.caption)
+    }
+    Picker(
+      "Lock delay",
+      selection: Binding(
+        get: { store.config.proximityGraceSeconds },
+        set: { store.send(.proximityGraceChanged($0)) },
+      ),
+    ) {
+      Text("Instant").tag(0.0)
+      Text("1 second").tag(1.0)
+      Text("2 seconds").tag(2.0)
+      Text("3 seconds").tag(3.0)
+      Text("5 seconds").tag(5.0)
+    }
+    Slider(
+      value: Binding(
+        get: { Double(store.config.proximitySmoothing) },
+        set: { store.send(.proximitySmoothingChanged(Int($0.rounded()))) },
+      ),
+      in: 1.0 ... 8.0,
+      step: 1,
+    ) {
+      Text("Smoothing: \(store.config.proximitySmoothing) samples")
+    } minimumValueLabel: {
+      Text("Snappy").font(.caption)
+    } maximumValueLabel: {
+      Text("Smooth").font(.caption)
     }
   }
 
   private var proximityStatusLine: String {
-    if store.config.proximityAutoLock, store.config.proximityDeviceID.isEmpty {
-      return "Pick your iPhone below"
+    if store.config.proximityAutoLock, store.config.proximityDevice == nil {
+      return store.config.proximityDeviceID.isEmpty
+        ? "Pick your phone below"
+        : "Selected device is invalid — Auto-lock inactive"
     }
     if let pause = store.activeAutoLockPause {
       switch pause {
@@ -907,6 +924,8 @@ private struct ProximitySettingsPane: View {
       "\(threshold) dBm"
     case .learning:
       "Learning…"
+    case .signalUnavailable:
+      "Signal unavailable"
     default:
       "Available while monitoring"
     }
@@ -916,6 +935,9 @@ private struct ProximitySettingsPane: View {
     switch status {
     case .disabled: "Off"
     case .waitingForBluetooth(let reason): reason.summary
+    case .connecting: "Connecting to paired device…"
+    case .connectionUnavailable: "Unable to connect to paired device — Auto-lock inactive"
+    case .deviceUnavailable: "Paired device unavailable — Auto-lock inactive"
     case .searching: "Looking for your device…"
     case .learning(let rssi):
       rssi.map { "Learning nearby signal · \($0) dBm" } ?? "Learning nearby signal…"
@@ -924,7 +946,22 @@ private struct ProximitySettingsPane: View {
       remaining.map { "Possible departure · \(rssi) dBm · \($0)s" } ?? "Possible departure · \(rssi) dBm"
     case .reacquiring: "Reacquiring after Bluetooth or sleep…"
     case .away: "Left — locked"
+    case .signalUnavailable: "Connected, but signal strength is unavailable — Auto-lock inactive"
     case .signalLost: "Signal lost — waiting for confirmation"
+    }
+  }
+
+  private func label(for transport: ProximityDeviceTransport) -> LocalizedStringResource {
+    switch transport {
+    case .continuity: "Nearby BLE"
+    case .classic: "Paired Bluetooth · Experimental"
+    }
+  }
+
+  private func symbol(for transport: ProximityDeviceTransport) -> SFSymbol {
+    switch transport {
+    case .continuity: .iphone
+    case .classic: .smartphone
     }
   }
 

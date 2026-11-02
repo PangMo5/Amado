@@ -1,4 +1,8 @@
 [tools]
-"aqua:tuist/tuist" = "4.195.6"
-ruby = "4.0"
-swiftformat = "0.62.1"
+"aqua:tuist/tuist" = "4.214.1"
+ruby = "4.0.9"
+swiftformat = "0.64.5"
+
+[env]
+# CI selects the same Xcode explicitly and exports its own DEVELOPER_DIR.
+DEVELOPER_DIR = { default = "/Applications/Xcode-27.2.0.app/Contents/Developer" }

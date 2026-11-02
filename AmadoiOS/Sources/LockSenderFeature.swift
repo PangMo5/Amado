@@ -201,7 +201,9 @@ struct LockSenderFeature {
         }
 
       case .lockResponse(let macID, let result):
-        if state.sendingMacID == macID { state.sendingMacID = nil }
+        if state.sendingMacID == macID {
+          state.sendingMacID = nil
+        }
         switch result {
         case .success(let response):
           let identityChanged = apply(response.mac, to: macID, in: &state)

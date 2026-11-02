@@ -35,8 +35,18 @@ its lid is closed.
 - LAN commands use Bonjour discovery and a direct TCP connection.
 - Remote commands use HTTPS through a tunnel operated by the user. The local
   HTTP listener binds only to `127.0.0.1:51521`.
-- Proximity auto-lock runs on the Mac and observes the selected iPhone's
+- Proximity auto-lock runs on the Mac and observes the selected phone's
   Bluetooth signal. It does not expose another network command endpoint.
+  The experimental Classic path observes only a device already paired by
+  macOS and consumes RSSI only after its own authentication-required open
+  reports success and the same physical connection handle remains active. A
+  pre-existing or replacement link that Amado did not authenticate, or
+  unavailable RSSI alone, cannot prove departure. An actual disconnect from a
+  link that already supplied usable nearby RSSI starts conservative signal-loss
+  confirmation; radio and lifecycle resets remain inactive. Amado makes one
+  best-effort close for a link whose successful open
+  callback it owns; it does not retry a failed close later because Classic
+  baseband links are shared and the physical connection may have changed.
 - Caffeinate uses a bundled LaunchDaemon that the user installs explicitly
   and an administrator approves through macOS Service Management. The root
   helper's XPC peer is restricted to Amado binaries signed by the same
@@ -75,7 +85,7 @@ buttons in that same dialog. Anyone with physical access—or access through
 remote-control software already enabled on the Mac—may be able to use the
 session and access its apps, files, accounts, and data. Pausing proximity
 Auto-lock removes the additional lock that would otherwise occur when the
-selected iPhone leaves.
+selected phone leaves.
 
 ## Caffeinate operational safety
 

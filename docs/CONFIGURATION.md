@@ -29,6 +29,7 @@ caffeinate_mode = "off"
 proximity_auto_lock = false
 caffeinate_pauses_auto_lock = false
 # proximity_pause_until is omitted unless auto-lock is temporarily paused
+proximity_device_transport = "continuity"
 proximity_device_id = ""
 proximity_device_name = ""
 proximity_mode = "smart"
@@ -50,10 +51,11 @@ configuration.
 | `mac_id` | String | generated once | Stable UUID shared with paired clients. Do not copy another Mac's value. |
 | `remote_host` | String | `""` | Public hostname of a user-operated HTTPS tunnel. Do not include `https://` or a path. Empty means LAN-only. |
 | `caffeinate_mode` | String | `"off"` | Caffeinate behavior: `"off"` sleeps normally, `"lock"` stays awake and locks the login session, and `"unlocked"` stays awake without locking. Install the Power Helper explicitly in Settings before using an awake mode. |
-| `proximity_auto_lock` | Boolean | `false` | Enables walk-away locking using the selected iPhone's Bluetooth signal. |
+| `proximity_auto_lock` | Boolean | `false` | Enables walk-away locking using the selected phone's Bluetooth signal. |
 | `caffeinate_pauses_auto_lock` | Boolean | `false` | Pauses proximity Auto-lock while Caffeinate is set to `"unlocked"`. The setting is ignored in `"off"` and `"lock"` modes. |
 | `proximity_pause_until` | Number | omitted | Unix timestamp at which a temporary auto-lock pause ends. Prefer setting this from the menu bar or Settings. The key is removed when auto-lock resumes. |
-| `proximity_device_id` | String | `""` | Core Bluetooth UUID of the selected device. Prefer selecting it in Settings. |
+| `proximity_device_transport` | String | `"continuity"` | Device identity and connection path: `"continuity"` for app-free iPhone BLE, or experimental `"classic"` for a system-paired Bluetooth device. |
+| `proximity_device_id` | String | `""` | Core Bluetooth UUID for `"continuity"`, or normalized Bluetooth address for `"classic"`. Prefer selecting it in Settings. |
 | `proximity_device_name` | String | `""` | Cached display name used by the Settings UI. |
 | `proximity_mode` | String | `"smart"` | Detection mode: `"smart"` learns the nearby signal and adapts its threshold; `"manual"` uses the three controls below. |
 | `proximity_sensitivity` | String | `"balanced"` | Smart-mode preset: `"conservative"`, `"balanced"`, or `"fast"`. |
@@ -61,14 +63,26 @@ configuration.
 | `proximity_grace_seconds` | Number | `2.0` | Manual mode only. Signal must remain far for this many seconds. The UI offers `0`, `1`, `2`, `3`, and `5`. |
 | `proximity_smoothing` | Integer | `3` | Manual mode only. Number of recent RSSI samples to average. Settings accepts `1` through `8`. |
 
-Existing configuration files that do not contain `proximity_mode` use Smart
-mode automatically. Auto-lock itself remains opt-in and is not enabled by this
-default. The learned nearby baseline is runtime-only: **Recalibrate nearby
+Existing configuration files that do not contain `proximity_device_transport`
+keep their existing iPhone selection by defaulting to `"continuity"`. Files
+without `proximity_mode` use Smart mode automatically. Auto-lock itself remains
+opt-in and is not enabled by either default. The learned nearby baseline is
+runtime-only: **Recalibrate nearby
 signal** discards it and starts a fresh learning window without changing
 `config.toml`. During normal monitoring, confirmed nearby samples can only move
 the learned reference within a bounded range in a more conservative direction.
 Momentarily stronger readings cannot tighten the departure threshold, and a
 gradual departure cannot move the reference indefinitely.
+
+The `"classic"` transport stores the paired device's normalized Bluetooth
+address locally. It requests authentication when opening a baseband connection
+and observes RSSI only after that open reports success; a pre-existing link
+that Amado did not authenticate stays inactive. Unusable `0` and `+127` readings
+keep Auto-lock inactive; other documented values are clamped to the decision
+engine's `-110` through `-1` dBm range. After usable nearby samples arm detection, the
+current authenticated link's actual disconnect enters signal-loss confirmation.
+An invalid RSSI sample by itself, a connection that never produced usable RSSI,
+unpairing, Bluetooth state changes, sleep, and wake remain fail-open.
 
 Pausing auto-lock keeps `proximity_auto_lock` enabled but stops proximity
 monitoring until `proximity_pause_until`. Amado clears an expired deadline and
