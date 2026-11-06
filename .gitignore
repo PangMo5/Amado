@@ -1,25 +1,23 @@
-# Tuist-generated artifacts
-*.xcodeproj/
-*.xcworkspace/
-.tuist/
+# Old/generated Xcode artifacts; the JSON project and shared schemes are tracked.
+*.pbxproj
+Amado.xcodeproj/project.xcworkspace/
+*.xcsettings
 Derived/
-graph.dot
-graph.png
 
 # Xcode user state
 xcuserdata/
 *.hmap
 DerivedData/
 
-# SwiftPM build cache (under Tuist/)
+# SwiftPM build cache
 .build/
 .swiftpm/
 
 # sourcekit-lsp / build server
 buildServer.json
 
-# Generated Info.plist
-**/Info.plist
+# Local signing configuration
+Configuration/Local.xcconfig
 
 # App packaging
 *.ipa

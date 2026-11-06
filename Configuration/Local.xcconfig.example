@@ -1,0 +1,3 @@
+DEVELOPMENT_TEAM = YOUR_TEAM_ID
+// Required for signed macOS releases that use Sparkle updates.
+SPARKLE_PUBLIC_ED_KEY =

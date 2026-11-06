@@ -1,0 +1,473 @@
+{
+  "id": "87CC58DE6C4AB597E20E17BB",
+  "organization": "PangMo5",
+  "default-configuration": "Debug",
+  "configurations": [
+    { "name": "Debug", "file": { "anchor": "Configuration", "relative-path": "Debug.xcconfig" } },
+    { "name": "Release", "file": { "anchor": "Configuration", "relative-path": "Release.xcconfig" } },
+  ],
+  "localizations": {
+    "development": "en",
+    "supported": [
+      "Base",
+    ],
+  },
+  "packages": [
+    {
+      "kind": "local",
+      "path": "AmadoPackage",
+    }, {
+      "kind": "remote",
+      "repository": "https://github.com/pointfreeco/swift-composable-architecture",
+      "version": {
+        "version": "1.26.2",
+      },
+    }, {
+      "kind": "remote",
+      "repository": "https://github.com/pointfreeco/swift-sharing",
+      "version": {
+        "version": "2.10.1",
+      },
+    }, {
+      "kind": "remote",
+      "repository": "https://github.com/pointfreeco/swift-dependencies",
+      "version": {
+        "version": "1.17.2",
+      },
+    }, {
+      "kind": "remote",
+      "repository": "https://github.com/pointfreeco/swift-case-paths",
+      "version": {
+        "version": "1.10.0",
+      },
+    }, {
+      "kind": "remote",
+      "repository": "https://github.com/pointfreeco/swift-concurrency-extras",
+      "version": {
+        "version": "1.4.3",
+      },
+    }, {
+      "kind": "remote",
+      "repository": "https://github.com/SFSafeSymbols/SFSafeSymbols",
+      "version": {
+        "version": "7.0.0",
+      },
+    }, {
+      "kind": "remote",
+      "repository": "https://github.com/sparkle-project/Sparkle",
+      "version": {
+        "version": "2.10.1",
+      },
+    }, {
+      "kind": "remote",
+      "repository": "https://github.com/hummingbird-project/hummingbird",
+      "version": {
+        "version": "2.28.1",
+      },
+    }, {
+      "kind": "remote",
+      "repository": "https://github.com/mattt/swift-toml",
+      "version": {
+        "version": "2.1.0",
+      },
+    },
+  ],
+  "files": [
+    {
+      "kind": "group",
+      "path": "Amado",
+      "children": [
+        { "kind": "folder", "path": "Sources", "target-membership": [ "Amado" ] },
+        { "kind": "folder", "path": "Resources", "target-membership": [ "Amado" ] },
+        { "path": "Info.plist" },
+      ],
+    }, {
+      "kind": "group",
+      "path": "AmadoiOS",
+      "children": [
+        { "kind": "folder", "path": "Sources", "target-membership": [ "AmadoiOS" ] },
+        { "kind": "folder", "path": "Resources", "target-membership": [ "AmadoWatch", "AmadoiOS" ] },
+        { "path": "Info.plist" },
+      ],
+    }, {
+      "kind": "group",
+      "path": "AmadoWatch",
+      "children": [
+        { "kind": "folder", "path": "Sources", "target-membership": [ "AmadoWatch" ] },
+        { "path": "Info.plist" },
+      ],
+    }, {
+      "kind": "group",
+      "path": "AmadoWidget",
+      "children": [
+        { "kind": "folder", "path": "Sources", "target-membership": [ "AmadoWidget" ] },
+        { "path": "Info.plist" },
+      ],
+    }, {
+      "kind": "group",
+      "path": "AmadoTests",
+      "children": [
+        { "kind": "folder", "path": "Sources", "target-membership": [ "AmadoTests" ] },
+      ],
+    }, {
+      "kind": "group",
+      "path": "AmadoPowerHelper",
+      "children": [
+        { "kind": "folder", "path": "Sources", "target-membership": [ "AmadoPowerHelper" ] },
+        { "kind": "folder", "path": "Shared", "target-membership": [ "Amado", "AmadoPowerHelper" ] },
+        { "kind": "folder", "path": "Resources" },
+        { "path": "Info.plist" },
+      ],
+    },
+    { "kind": "folder", "path": "Configuration" },
+    { "kind": "folder", "path": "MobileResources", "target-membership": [ "AmadoWatch", "AmadoWidget", "AmadoiOS" ] },
+    { "path": "LICENSE", "target-membership": [ "Amado/resources" ] },
+    {
+      "path": "LICENSES/MPL-2.0.txt",
+      "target-membership": [
+        "Amado/resources",
+        "AmadoiOS/resources",
+      ],
+    }, {
+      "path": "NOTICE.md",
+      "target-membership": [
+        "Amado/resources",
+        "AmadoiOS/resources",
+      ],
+    }, {
+      "kind": "group",
+      "name": "Products",
+      "children": [
+        { "path": "<PRODUCTS>/Amado.app" },
+        { "path": "<PRODUCTS>/AmadoPowerHelper", "target-membership": [ { "build-phase": "Amado/copy/Embed Power Helper", "code-sign-on-copy": true, "header-preservation": "remove-on-copy" } ] },
+        { "path": "<PRODUCTS>/AmadoiOS.app" },
+        { "path": "<PRODUCTS>/AmadoWatch.app", "target-membership": [ { "build-phase": "AmadoiOS/copy/Embed Watch Content", "code-sign-on-copy": true, "header-preservation": "remove-on-copy" } ] },
+        { "path": "<PRODUCTS>/AmadoWidget.appex", "target-membership": [ { "build-phase": "AmadoiOS/copy/Embed App Extensions", "code-sign-on-copy": true, "header-preservation": "remove-on-copy" } ] },
+        { "path": "<PRODUCTS>/AmadoTests.xctest" },
+      ],
+    },
+  ],
+  "targets": [
+    {
+      "name": "Amado",
+      "id": "F983524288ED78BB7941849D",
+      "product": "Products/Amado.app",
+      "product-type": "application",
+      "specialized-configurations": [
+        { "name": "Debug", "file": { "anchor": "Configuration", "relative-path": "AmadoDebug.xcconfig" } },
+        { "name": "Release", "file": { "anchor": "Configuration", "relative-path": "AmadoRelease.xcconfig" } },
+      ],
+      "dependencies": [
+        "AmadoPowerHelper",
+      ],
+      "build-phases": [
+        "compile-sources",
+        "frameworks",
+        "resources",
+        {
+          "kind": "copy",
+          "name": "Embed Power Helper",
+          "bundle-base-path": "executables-directory",
+        }, {
+          "kind": "script",
+          "name": "Install Power Helper LaunchDaemon",
+          "input-paths": [
+            "$(SRCROOT)/AmadoPowerHelper/Resources/$(PRODUCT_BUNDLE_IDENTIFIER).PowerHelper.plist",
+          ],
+          "output-paths": [
+            "$(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/Library/LaunchDaemons/$(PRODUCT_BUNDLE_IDENTIFIER).PowerHelper.plist",
+          ],
+          "shell": "/bin/sh",
+          "script": [
+            "set -eu",
+            "destination=\"${TARGET_BUILD_DIR}/${CONTENTS_FOLDER_PATH}/Library/LaunchDaemons\"",
+            "/bin/mkdir -p \"$destination\"",
+            "/usr/bin/install -m 644 \"${SCRIPT_INPUT_FILE_0}\" \"${SCRIPT_OUTPUT_FILE_0}\"",
+          ],
+        },
+      ],
+      "package-product-members": [
+        {
+          "product-name": "AmadoKit",
+          "build-phase": { "build-phase": "frameworks" },
+        }, {
+          "product-name": "CasePaths",
+          "build-phase": { "build-phase": "frameworks" },
+        }, {
+          "product-name": "ComposableArchitecture",
+          "build-phase": { "build-phase": "frameworks" },
+        }, {
+          "product-name": "Dependencies",
+          "build-phase": { "build-phase": "frameworks" },
+        }, {
+          "product-name": "DependenciesMacros",
+          "build-phase": { "build-phase": "frameworks" },
+        }, {
+          "product-name": "Hummingbird",
+          "build-phase": { "build-phase": "frameworks" },
+        }, {
+          "product-name": "SFSafeSymbols",
+          "build-phase": { "build-phase": "frameworks" },
+        }, {
+          "product-name": "Sharing",
+          "build-phase": { "build-phase": "frameworks" },
+        }, {
+          "product-name": "Sparkle",
+          "build-phase": { "build-phase": "frameworks" },
+        }, {
+          "product-name": "TOML",
+          "build-phase": { "build-phase": "frameworks" },
+        },
+      ],
+      "build-settings": {
+        "ASSETCATALOG_COMPILER_APPICON_NAME": "AppIcon",
+        "ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME": "AccentColor",
+        "CODE_SIGN_ENTITLEMENTS": "Amado/Amado.entitlements",
+        "COMBINE_HIDPI_IMAGES": "YES",
+        "ENABLE_PREVIEWS": "YES",
+        "GENERATE_INFOPLIST_FILE": "NO",
+        "INFOPLIST_FILE": "Amado/Info.plist",
+        "LD_RUNPATH_SEARCH_PATHS": "$(inherited) @executable_path/../Frameworks",
+        "MACOSX_DEPLOYMENT_TARGET": "15.0",
+        "MARKETING_VERSION": "$(AMADO_MACOS_VERSION)",
+        "PRODUCT_NAME": "Amado",
+        "SDKROOT": "macosx",
+        "SUPPORTED_PLATFORMS": "macosx",
+      },
+    }, {
+      "name": "AmadoPowerHelper",
+      "id": "3A4D9A27984398166035A3A2",
+      "product": "Products/AmadoPowerHelper",
+      "product-type": "tool",
+      "specialized-configurations": [
+        { "name": "Debug", "file": { "anchor": "Configuration", "relative-path": "AmadoPowerHelperDebug.xcconfig" } },
+        { "name": "Release", "file": { "anchor": "Configuration", "relative-path": "AmadoPowerHelperRelease.xcconfig" } },
+      ],
+      "build-phases": [
+        "compile-sources",
+        "frameworks",
+        "resources",
+      ],
+      "build-settings": {
+        "CREATE_INFOPLIST_SECTION_IN_BINARY": "YES",
+        "GENERATE_INFOPLIST_FILE": "NO",
+        "INFOPLIST_FILE": "AmadoPowerHelper/Info.plist",
+        "MACOSX_DEPLOYMENT_TARGET": "15.0",
+        "MARKETING_VERSION": "$(AMADO_MACOS_VERSION)",
+        "PRODUCT_NAME": "AmadoPowerHelper",
+        "SDKROOT": "macosx",
+        "SKIP_INSTALL": "YES",
+        "SUPPORTED_PLATFORMS": "macosx",
+      },
+    }, {
+      "name": "AmadoiOS",
+      "id": "E884AB6274B5C4777A96044B",
+      "product": "Products/AmadoiOS.app",
+      "product-type": "application",
+      "dependencies": [
+        "AmadoWatch",
+        "AmadoWidget",
+      ],
+      "build-phases": [
+        "compile-sources",
+        "frameworks",
+        "resources",
+        {
+          "kind": "copy",
+          "name": "Embed Watch Content",
+          "bundle-base-path": "build-products-directory",
+          "relative-path": "$(CONTENTS_FOLDER_PATH)/Watch",
+        }, {
+          "kind": "copy",
+          "name": "Embed App Extensions",
+          "bundle-base-path": "plugins-directory",
+        },
+      ],
+      "package-product-members": [
+        {
+          "product-name": "AmadoKit",
+          "build-phase": { "build-phase": "frameworks" },
+        }, {
+          "product-name": "CasePaths",
+          "build-phase": { "build-phase": "frameworks" },
+        }, {
+          "product-name": "ComposableArchitecture",
+          "build-phase": { "build-phase": "frameworks" },
+        }, {
+          "product-name": "Dependencies",
+          "build-phase": { "build-phase": "frameworks" },
+        }, {
+          "product-name": "DependenciesMacros",
+          "build-phase": { "build-phase": "frameworks" },
+        }, {
+          "product-name": "SFSafeSymbols",
+          "build-phase": { "build-phase": "frameworks" },
+        }, {
+          "product-name": "Sharing",
+          "build-phase": { "build-phase": "frameworks" },
+        },
+      ],
+      "build-settings": {
+        "ASSETCATALOG_COMPILER_APPICON_NAME": "AppIcon",
+        "ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME": "BrandTint",
+        "CODE_SIGN_ENTITLEMENTS": "AmadoiOS/AmadoiOS.entitlements",
+        "ENABLE_PREVIEWS": "YES",
+        "GENERATE_INFOPLIST_FILE": "NO",
+        "INFOPLIST_FILE": "AmadoiOS/Info.plist",
+        "IPHONEOS_DEPLOYMENT_TARGET": "18.0",
+        "LD_RUNPATH_SEARCH_PATHS": "$(inherited) @executable_path/Frameworks",
+        "MARKETING_VERSION": "$(AMADO_IOS_VERSION)",
+        "PRODUCT_BUNDLE_IDENTIFIER": "dev.PangMo5.Amado.iOS",
+        "PRODUCT_NAME": "AmadoiOS",
+        "PROVISIONING_PROFILE_SPECIFIER": "$(AMADO_IOS_PROVISIONING_PROFILE)",
+        "SDKROOT": "iphoneos",
+        "SUPPORTED_PLATFORMS": "iphoneos iphonesimulator",
+        "SUPPORTS_MACCATALYST": "NO",
+        "SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD": "YES",
+        "SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD": "NO",
+        "TARGETED_DEVICE_FAMILY": "1",
+      },
+    }, {
+      "name": "AmadoWatch",
+      "id": "9C163EF1D8CDF5045CA0EBD8",
+      "product": "Products/AmadoWatch.app",
+      "product-type": "application",
+      "build-phases": [
+        "compile-sources",
+        "frameworks",
+        "resources",
+      ],
+      "package-product-members": [
+        {
+          "product-name": "AmadoKit",
+          "build-phase": { "build-phase": "frameworks" },
+        }, {
+          "product-name": "CasePaths",
+          "build-phase": { "build-phase": "frameworks" },
+        }, {
+          "product-name": "ComposableArchitecture",
+          "build-phase": { "build-phase": "frameworks" },
+        }, {
+          "product-name": "Dependencies",
+          "build-phase": { "build-phase": "frameworks" },
+        }, {
+          "product-name": "DependenciesMacros",
+          "build-phase": { "build-phase": "frameworks" },
+        }, {
+          "product-name": "SFSafeSymbols",
+          "build-phase": { "build-phase": "frameworks" },
+        }, {
+          "product-name": "Sharing",
+          "build-phase": { "build-phase": "frameworks" },
+        },
+      ],
+      "build-settings": {
+        "ASSETCATALOG_COMPILER_APPICON_NAME": "AppIcon",
+        "ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME": "BrandTint",
+        "ENABLE_PREVIEWS": "YES",
+        "GENERATE_INFOPLIST_FILE": "NO",
+        "INFOPLIST_FILE": "AmadoWatch/Info.plist",
+        "LD_RUNPATH_SEARCH_PATHS": "$(inherited) @executable_path/Frameworks",
+        "MARKETING_VERSION": "$(AMADO_IOS_VERSION)",
+        "PRODUCT_BUNDLE_IDENTIFIER": "dev.PangMo5.Amado.iOS.watchkitapp",
+        "PRODUCT_NAME": "AmadoWatch",
+        "PROVISIONING_PROFILE_SPECIFIER": "$(AMADO_WATCH_PROVISIONING_PROFILE)",
+        "SDKROOT": "watchos",
+        "SKIP_INSTALL": "YES",
+        "SUPPORTED_PLATFORMS": "watchos watchsimulator",
+        "TARGETED_DEVICE_FAMILY": "4",
+        "WATCHOS_DEPLOYMENT_TARGET": "11.0",
+      },
+    }, {
+      "name": "AmadoWidget",
+      "id": "0164FBFBEA4DBD1D06B8BC86",
+      "product": "Products/AmadoWidget.appex",
+      "product-type": "app-extension",
+      "build-phases": [
+        "compile-sources",
+        "frameworks",
+        "resources",
+      ],
+      "package-product-members": [
+        {
+          "product-name": "AmadoKit",
+          "build-phase": { "build-phase": "frameworks" },
+        },
+      ],
+      "build-settings": {
+        "APPLICATION_EXTENSION_API_ONLY": "YES",
+        "ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME": "BrandTint",
+        "CODE_SIGN_ENTITLEMENTS": "AmadoWidget/AmadoWidget.entitlements",
+        "GENERATE_INFOPLIST_FILE": "NO",
+        "INFOPLIST_FILE": "AmadoWidget/Info.plist",
+        "IPHONEOS_DEPLOYMENT_TARGET": "18.0",
+        "LD_RUNPATH_SEARCH_PATHS": "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks",
+        "MARKETING_VERSION": "$(AMADO_IOS_VERSION)",
+        "PRODUCT_BUNDLE_IDENTIFIER": "dev.PangMo5.Amado.iOS.Widget",
+        "PRODUCT_NAME": "AmadoWidget",
+        "PROVISIONING_PROFILE_SPECIFIER": "$(AMADO_WIDGET_PROVISIONING_PROFILE)",
+        "SDKROOT": "iphoneos",
+        "SKIP_INSTALL": "YES",
+        "SUPPORTED_PLATFORMS": "iphoneos iphonesimulator",
+        "SUPPORTS_MACCATALYST": "NO",
+        "SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD": "YES",
+        "SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD": "NO",
+        "TARGETED_DEVICE_FAMILY": "1",
+      },
+    }, {
+      "name": "AmadoTests",
+      "id": "FC99D042D6C39AD50CCA6188",
+      "product": "Products/AmadoTests.xctest",
+      "product-type": "bundle.unit-test",
+      "test-host-target": "Amado",
+      "dependencies": [
+        "Amado",
+      ],
+      "build-phases": [
+        "compile-sources",
+        "frameworks",
+        "resources",
+      ],
+      "package-product-members": [
+        {
+          "product-name": "AmadoKit",
+          "build-phase": { "build-phase": "frameworks" },
+        }, {
+          "product-name": "CasePaths",
+          "build-phase": { "build-phase": "frameworks" },
+        }, {
+          "product-name": "ComposableArchitecture",
+          "build-phase": { "build-phase": "frameworks" },
+        }, {
+          "product-name": "ConcurrencyExtras",
+          "build-phase": { "build-phase": "frameworks" },
+        }, {
+          "product-name": "Dependencies",
+          "build-phase": { "build-phase": "frameworks" },
+        }, {
+          "product-name": "DependenciesMacros",
+          "build-phase": { "build-phase": "frameworks" },
+        }, {
+          "product-name": "Sharing",
+          "build-phase": { "build-phase": "frameworks" },
+        }, {
+          "product-name": "TOML",
+          "build-phase": { "build-phase": "frameworks" },
+        },
+      ],
+      "build-settings": {
+        "BUNDLE_LOADER": "$(TEST_HOST)",
+        "GENERATE_INFOPLIST_FILE": "YES",
+        "LD_RUNPATH_SEARCH_PATHS": "$(inherited) @loader_path/../Frameworks @executable_path/../Frameworks",
+        "MACOSX_DEPLOYMENT_TARGET": "15.0",
+        "MARKETING_VERSION": "$(AMADO_IOS_VERSION)",
+        "PRODUCT_BUNDLE_IDENTIFIER": "dev.PangMo5.Amado.Tests",
+        "PRODUCT_NAME": "AmadoTests",
+        "SDKROOT": "macosx",
+        "SUPPORTED_PLATFORMS": "macosx",
+        "TEST_HOST": "$(BUILT_PRODUCTS_DIR)/Amado.app/Contents/MacOS/Amado",
+        "TEST_TARGET_NAME": "Amado",
+      },
+    },
+  ],
+}

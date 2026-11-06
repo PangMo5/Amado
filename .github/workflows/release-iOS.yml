@@ -67,9 +67,9 @@ jobs:
               ;;
           esac
           TAG_VERSION="${RELEASE_TAG#iOS-v}"
-          PROJECT_VERSION="$(grep -E '^let iOSVersion' Project.swift | sed -E 's/.*"([^"]+)".*/\1/')"
+          PROJECT_VERSION="$(ruby -e 'puts File.read("Configuration/Versions.xcconfig")[/^AMADO_IOS_VERSION\s*=\s*(\S+)/, 1] || abort("Missing AMADO_IOS_VERSION")')"
           if [ "$TAG_VERSION" != "$PROJECT_VERSION" ]; then
-            echo "::error::Tag ($TAG_VERSION) does not match Project.swift iOSVersion ($PROJECT_VERSION)." >&2
+            echo "::error::Tag ($TAG_VERSION) does not match Versions.xcconfig AMADO_IOS_VERSION ($PROJECT_VERSION)." >&2
             exit 1
           fi
           if ! grep -qE "^## ${TAG_VERSION} \\(" CHANGELOG-iOS.md; then

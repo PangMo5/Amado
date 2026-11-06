@@ -26,8 +26,8 @@ jobs:
   release:
     runs-on: xcode-27
     env:
-      TUIST_DEVELOPMENT_TEAM: ${{ secrets.DEVELOPMENT_TEAM }}
-      TUIST_SPARKLE_PUBLIC_ED_KEY: ${{ secrets.SPARKLE_PUBLIC_ED_KEY }}
+      DEVELOPMENT_TEAM: ${{ secrets.DEVELOPMENT_TEAM }}
+      SPARKLE_PUBLIC_ED_KEY: ${{ secrets.SPARKLE_PUBLIC_ED_KEY }}
     steps:
       - uses: actions/checkout@v7.0.1
 
@@ -45,9 +45,9 @@ jobs:
               ;;
           esac
           TAG_VERSION="${RELEASE_TAG#v}"
-          APP_VERSION="$(grep -E '^let macOSVersion' Project.swift | sed -E 's/.*"([^"]+)".*/\1/')"
+          APP_VERSION="$(ruby -e 'puts File.read("Configuration/Versions.xcconfig")[/^AMADO_MACOS_VERSION\s*=\s*(\S+)/, 1] || abort("Missing AMADO_MACOS_VERSION")')"
           if [ "$TAG_VERSION" != "$APP_VERSION" ]; then
-            echo "::error::Tag ($TAG_VERSION) does not match Project.swift macOSVersion ($APP_VERSION)." >&2
+            echo "::error::Tag ($TAG_VERSION) does not match Versions.xcconfig AMADO_MACOS_VERSION ($APP_VERSION)." >&2
             exit 1
           fi
           echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
@@ -81,24 +81,26 @@ jobs:
           done < <(security list-keychains -d user)
           security list-keychains -d user -s "$KEYCHAIN" "${EXISTING_KEYCHAINS[@]}"
 
-      - name: Generate Xcode project
-        env:
-          TUIST_BUILD_NUMBER: ${{ github.run_number }}
-        run: |
-          make install generate
+      - name: Resolve Swift packages
+        run: make install
 
       - name: Archive macOS agent
         run: |
           set -euo pipefail
           xcodebuild archive \
             -workspace Amado.xcworkspace \
+            -clonedSourcePackagesDirPath .build/SourcePackages \
+            -onlyUsePackageVersionsFromResolvedFile \
+            -skipMacroValidation \
             -scheme Amado \
             -configuration Release \
             -destination 'generic/platform=macOS' \
             -archivePath "$RUNNER_TEMP/Amado.xcarchive" \
+            CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
+            SPARKLE_PUBLIC_ED_KEY="$SPARKLE_PUBLIC_ED_KEY" \
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="Developer ID Application" \
-            DEVELOPMENT_TEAM="$TUIST_DEVELOPMENT_TEAM" \
+            DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM" \
             ENABLE_HARDENED_RUNTIME=YES \
             OTHER_CODE_SIGN_FLAGS="--timestamp --options=runtime"
 
@@ -177,7 +179,8 @@ jobs:
           SPARKLE_PRIVATE_ED_KEY: ${{ secrets.SPARKLE_PRIVATE_ED_KEY }}
         run: |
           set -euo pipefail
-          SPARKLE_BIN="$(find Tuist/.build -path '*/Sparkle/bin' -type d | head -1)"
+          SPARKLE_BIN="$GITHUB_WORKSPACE/.build/SourcePackages/artifacts/sparkle/Sparkle/bin"
+          test -x "$SPARKLE_BIN/generate_appcast"
           mkdir -p "$RUNNER_TEMP/release"
           cp "$RUNNER_TEMP/Amado-${{ steps.version.outputs.version }}.dmg" "$RUNNER_TEMP/release/"
           echo "$SPARKLE_PRIVATE_ED_KEY" > "$RUNNER_TEMP/sparkle_ed_private.key"

@@ -3,7 +3,7 @@
 --min-version 0.64.5
 
 # Exclude checkout directories for common package managers
---exclude Carthage,Pods,.build,Derived,DerivedData,Tuist/.build,.tuist,.jj
+--exclude Carthage,Pods,.build,Derived,DerivedData,.jj
 
 # options
 --swift-version 6.4

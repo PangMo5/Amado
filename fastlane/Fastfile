@@ -1,3 +1,5 @@
+require "shellwords"
+
 default_platform(:ios)
 
 IOS_APP_IDENTIFIER = "dev.PangMo5.Amado.iOS"
@@ -6,10 +8,10 @@ IOS_ACCOUNT_HOLDER = ["Kwangmin", "Bae"].freeze
 PROJECT_ROOT = File.expand_path("..", __dir__)
 DEFAULT_TESTFLIGHT_EXTERNAL_GROUPS = ["External Testers"].freeze
 DEFAULT_TESTFLIGHT_INTERNAL_GROUPS = ["App Store Connect Users"].freeze
-IOS_PROFILE_ENVIRONMENTS = {
-  "dev.PangMo5.Amado.iOS" => "TUIST_IOS_PROVISIONING_PROFILE",
-  "dev.PangMo5.Amado.iOS.watchkitapp" => "TUIST_WATCH_PROVISIONING_PROFILE",
-  "dev.PangMo5.Amado.iOS.Widget" => "TUIST_WIDGET_PROVISIONING_PROFILE",
+IOS_PROFILE_SETTINGS = {
+  "dev.PangMo5.Amado.iOS" => "AMADO_IOS_PROVISIONING_PROFILE",
+  "dev.PangMo5.Amado.iOS.watchkitapp" => "AMADO_WATCH_PROVISIONING_PROFILE",
+  "dev.PangMo5.Amado.iOS.Widget" => "AMADO_WIDGET_PROVISIONING_PROFILE",
 }.freeze
 
 def required_environment(name)
@@ -157,26 +159,33 @@ def changelog_for(version)
 end
 
 def validate_project_version(version)
-  project = File.read(project_path("Project.swift"))
-  project_version = project[/^let iOSVersion = "([^"]+)"$/, 1]
-  UI.user_error!("Project.swift has no iOSVersion") unless project_version
+  project = File.read(project_path("Configuration", "Versions.xcconfig"))
+  project_version = project[/^AMADO_IOS_VERSION\s*=\s*(\S+)/, 1]
+  UI.user_error!("Versions.xcconfig has no AMADO_IOS_VERSION") unless project_version
   return if project_version == version
 
   UI.user_error!(
-    "Release version #{version} does not match Project.swift iOSVersion #{project_version}",
+    "Release version #{version} does not match Versions.xcconfig AMADO_IOS_VERSION #{project_version}",
   )
 end
 
-def configure_tuist_profiles
+def signing_build_settings(team_id:, build_number:)
   mapping = lane_context[SharedValues::MATCH_PROVISIONING_PROFILE_MAPPING] || {}
-  missing = IOS_PROFILE_ENVIRONMENTS.keys.reject { |bundle_id| mapping[bundle_id] }
+  missing = IOS_PROFILE_SETTINGS.keys.reject { |bundle_id| mapping[bundle_id] }
   unless missing.empty?
     UI.user_error!("match did not provide profiles for: #{missing.join(', ')}")
   end
 
-  IOS_PROFILE_ENVIRONMENTS.each do |bundle_id, environment|
-    ENV[environment] = mapping.fetch(bundle_id)
+  settings = {
+    "DEVELOPMENT_TEAM" => team_id,
+    "CURRENT_PROJECT_VERSION" => build_number.to_s,
+    "CODE_SIGN_STYLE" => "Manual",
+    "CODE_SIGN_IDENTITY" => "Apple Distribution",
+  }
+  IOS_PROFILE_SETTINGS.each do |bundle_id, setting|
+    settings[setting] = mapping.fetch(bundle_id)
   end
+  settings.map { |name, value| "#{name}=#{Shellwords.escape(value)}" }.join(" ")
 end
 
 def external_testflight_groups
@@ -339,8 +348,6 @@ platform :ios do
       initial_build_number: 0,
     )
     build_number = latest_build.to_i + 1
-    ENV["TUIST_BUILD_NUMBER"] = build_number.to_s
-    ENV["TUIST_DEVELOPMENT_TEAM"] = team_id
 
     keychain_name = "amado-fastlane-#{ENV.fetch('GITHUB_RUN_ID', Process.pid)}"
     create_keychain(
@@ -356,7 +363,7 @@ platform :ios do
     begin
       match_options = {
         type: "appstore",
-        app_identifier: IOS_PROFILE_ENVIRONMENTS.keys,
+        app_identifier: IOS_PROFILE_SETTINGS.keys,
         api_key: api_key,
         readonly: false,
         generate_apple_certs: true,
@@ -371,9 +378,8 @@ platform :ios do
       match_options[:git_private_key] = private_key unless private_key.empty?
       match(**match_options)
 
-      configure_tuist_profiles
       Dir.chdir(PROJECT_ROOT) do
-        sh("make install generate")
+        sh("make install")
       end
 
       profile_mapping = lane_context.fetch(SharedValues::MATCH_PROVISIONING_PROFILE_MAPPING)
@@ -382,6 +388,10 @@ platform :ios do
         scheme: "AmadoiOS",
         configuration: "Release",
         clean: true,
+        xcargs: "-skipMacroValidation #{signing_build_settings(team_id: team_id, build_number: build_number)}",
+        cloned_source_packages_path: project_path(".build", "SourcePackages"),
+        skip_package_dependencies_resolution: true,
+        disable_package_automatic_updates: true,
         export_method: "app-store",
         export_team_id: team_id,
         export_options: {

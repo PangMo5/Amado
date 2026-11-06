@@ -10,7 +10,8 @@ tests, build and release tooling, documentation, and website.
 The following iPhone, Apple Watch, Widget, and shared-core paths are licensed
 under the [Mozilla Public License 2.0](LICENSES/MPL-2.0.txt) (`MPL-2.0`):
 
-- `AmadoKit/**`
+- `AmadoPackage/Package.swift`
+- `AmadoPackage/Sources/**`
 - `AmadoiOS/**`
 - `AmadoWatch/**`
 - `AmadoWidget/**`
