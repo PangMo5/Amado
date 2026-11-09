@@ -1,5 +1,4 @@
 [tools]
-"aqua:tuist/tuist" = "4.214.1"
 ruby = "4.0.9"
 swiftformat = "0.64.5"
 

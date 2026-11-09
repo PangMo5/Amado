@@ -143,19 +143,39 @@ See the complete [`config.toml` reference](docs/CONFIGURATION.md),
 
 ## Build from source
 
-Use Xcode 27.2 (Swift 6.4, SDKs 27.2). The project pins Tuist, Ruby, and
+Use Xcode 27.2 (Swift 6.4, SDKs 27.2). The project pins Ruby and
 SwiftFormat in `.mise.toml`. Install Xcode at
 `/Applications/Xcode-27.2.0.app`, or set `DEVELOPER_DIR` to its developer
-directory. Tuist rejects other Xcode versions. CI uses the `xcode-27` preview
-runner and explicitly selects Xcode 27.2; its installed build may be an RC
+directory. The JSON project format requires Xcode 27 or later. CI uses the
+`xcode-27` preview runner and explicitly selects Xcode 27.2; its installed build may be an RC
 until the runner image catches up with the local release.
 
 ```sh
-export TUIST_DEVELOPMENT_TEAM=YOUR_TEAM_ID
-mise install aqua:tuist/tuist ruby swiftformat
+mise install ruby swiftformat
+cp Configuration/Local.xcconfig.example Configuration/Local.xcconfig
+# Set DEVELOPMENT_TEAM in Configuration/Local.xcconfig for signed app builds.
 make bootstrap
 mise exec -- xcrun xed Amado.xcworkspace
 ```
+
+Open **Amado.xcworkspace** to work on the apps and the local `AmadoPackage`
+together. SwiftPM manages `AmadoKit` and third-party dependencies. The checked-in
+`Amado.xcodeproj/project.xcproj` contains the native app, Watch, Widget, helper,
+and app-test targets. Synchronized source folders pick up new files automatically.
+
+Run `make test-package` for shared-core tests without building an app, or
+`make test` for both shared-core and macOS app tests. Use `make build`,
+`make build-ios`, and `make build-watch` to build the corresponding apps.
+
+After changing the target graph in `Tools/ProjectGenerator`, run `make generate`
+and commit the resulting project and shared schemes. This small SwiftPM tool
+uses Apple's [xcode-project-format](https://github.com/apple/xcode-project-format)
+library; it is not required for routine app builds. `make generate-check`
+verifies that the checked-in files match the generator. Dependency versions are
+locked in the workspace's `xcshareddata/swiftpm/Package.resolved`; the generator
+has its own `Package.resolved`. Release versions live in
+`Configuration/Versions.xcconfig`. CI passes build numbers and signing profiles
+directly to Xcode, without rewriting the shared project.
 
 Use `make format` to apply the Airbnb Swift style and `make format-check` to
 check it without changing files. The configuration follows Airbnb’s upstream
@@ -168,7 +188,7 @@ and `jj log` to manage changes. Existing Git history and remotes are preserved.
 
 ## Tech stack
 
-- Tuist-generated Xcode workspace
+- SwiftPM packages and a native Xcode JSON project
 - The Composable Architecture and Sharing
 - Hummingbird for the loopback HTTP endpoint
 - Sparkle for macOS updates
@@ -181,7 +201,8 @@ The macOS app, Power Helper, tests, tooling, documentation, and website are
 licensed under [GNU Affero General Public License v3.0 only](LICENSE)
 (`AGPL-3.0-only`). Copyright (C) 2026 PangMo5.
 
-The iPhone, Apple Watch, Widget, and shared `AmadoKit` sources remain under the
+The iPhone, Apple Watch, Widget, and shared `AmadoKit` sources
+(`AmadoPackage/Sources`) remain under the
 [Mozilla Public License 2.0](LICENSES/MPL-2.0.txt) (`MPL-2.0`). See
 [NOTICE.md](NOTICE.md) and `REUSE.toml` for the exact path-level boundary.
 Third-party components remain under their respective upstream licenses.

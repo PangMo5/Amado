@@ -1,30 +1,40 @@
-.PHONY: install generate build build-ios run test format format-check clean bootstrap
+.PHONY: install generate generate-check build build-ios build-watch run test test-package format format-check clean bootstrap
+
+XCODEBUILD = mise exec -- xcodebuild
+SWIFT = mise exec -- swift
+XCODE_FLAGS = -workspace Amado.xcworkspace -derivedDataPath DerivedData -clonedSourcePackagesDirPath .build/SourcePackages -onlyUsePackageVersionsFromResolvedFile -skipMacroValidation
 
 install:
-	mise exec -- tuist install --force-resolved-versions
+	$(XCODEBUILD) -resolvePackageDependencies $(XCODE_FLAGS) -scheme Amado
 
 generate:
-	mise exec -- tuist generate --no-open
+	$(SWIFT) run --package-path Tools/ProjectGenerator --disable-automatic-resolution generate-project
 
-# `tuist build` is deprecated; generate first, then drive the generated project
-# through the `tuist xcodebuild` wrapper.
-# -allowProvisioningUpdates lets xcodebuild register the iCloud container and
-# Push Notifications capability with the signed-in Apple ID on first build.
-build: generate
-	mise exec -- tuist xcodebuild build -scheme Amado -workspace Amado.xcworkspace -configuration Debug -destination 'platform=macOS' -allowProvisioningUpdates
+generate-check:
+	$(SWIFT) run --package-path Tools/ProjectGenerator --disable-automatic-resolution generate-project --check
 
-build-ios: generate
-	mise exec -- tuist xcodebuild build -scheme AmadoiOS -workspace Amado.xcworkspace -configuration Debug -destination 'generic/platform=iOS Simulator' -allowProvisioningUpdates
+# Source folders synchronize automatically; regenerate only after changing the
+# project generator. Open the workspace to develop apps and the local package.
+build:
+	$(XCODEBUILD) build $(XCODE_FLAGS) -scheme Amado -configuration Debug -destination 'platform=macOS' -allowProvisioningUpdates
+
+build-ios:
+	$(XCODEBUILD) build $(XCODE_FLAGS) -scheme AmadoiOS -configuration Debug -destination 'generic/platform=iOS Simulator' -allowProvisioningUpdates
+
+build-watch:
+	$(XCODEBUILD) build $(XCODE_FLAGS) -scheme AmadoWatch -configuration Debug -destination 'generic/platform=watchOS Simulator' -allowProvisioningUpdates
 
 # Build and launch the distinct Debug app so its local-network and Bluetooth
 # privacy grants never collide with an installed release.
-run: generate
+run: build
 	-killall Amado 2>/dev/null
-	mise exec -- tuist xcodebuild build -scheme Amado -workspace Amado.xcworkspace -configuration Debug -destination 'platform=macOS' -derivedDataPath DerivedData -allowProvisioningUpdates
 	open DerivedData/Build/Products/Debug/Amado.app
 
-test: generate
-	mise exec -- tuist xcodebuild test -workspace Amado.xcworkspace -scheme Amado -configuration Debug -destination 'platform=macOS'
+test: test-package
+	$(XCODEBUILD) test $(XCODE_FLAGS) -scheme Amado -configuration Debug -destination 'platform=macOS'
+
+test-package:
+	$(SWIFT) test --package-path AmadoPackage
 
 format:
 	mise exec -- swiftformat .
@@ -33,7 +43,8 @@ format-check:
 	mise exec -- swiftformat --lint .
 
 clean:
-	mise exec -- tuist clean
-	rm -rf Derived DerivedData
+	$(XCODEBUILD) clean $(XCODE_FLAGS) -scheme Amado
+	$(SWIFT) package --package-path AmadoPackage clean
+	$(SWIFT) package --package-path Tools/ProjectGenerator clean
 
-bootstrap: install generate
+bootstrap: install
