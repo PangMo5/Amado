@@ -545,6 +545,7 @@ private struct AboutSection: View {
       Link("GitHub", destination: Self.repositoryURL)
       Link("Release Notes", destination: Self.releaseNotesURL)
       Link("Privacy", destination: Self.privacyURL)
+      Link("Support Development", destination: Self.supportURL)
     }
 
     Section {
@@ -593,6 +594,7 @@ private struct AboutSection: View {
   private static let repositoryURL = URL(string: "https://github.com/PangMo5/Amado")!
   private static let releaseNotesURL = URL(string: "https://amado.pangmo5.dev/releases.html")!
   private static let privacyURL = URL(string: "https://amado.pangmo5.dev/privacy.html")!
+  private static let supportURL = URL(string: "https://buymeacoffee.com/pangmo5")!
 
   private static let acknowledgements: [(name: String, url: URL)] = [
     (

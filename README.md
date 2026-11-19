@@ -195,6 +195,12 @@ and `jj log` to manage changes. Existing Git history and remotes are preserved.
 - WidgetKit, App Intents, and WatchConnectivity
 - Swift Testing and strict Swift 6 concurrency
 
+## Support development
+
+If you find Amado useful, you can support its development with a coffee.
+
+<a href="https://buymeacoffee.com/pangmo5"><img src="https://pangmo5.dev/buy-me-a-coffee.png" alt="Support development on Buy Me a Coffee" width="144"></a>
+
 ## License
 
 The macOS app, Power Helper, tests, tooling, documentation, and website are
