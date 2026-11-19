@@ -197,7 +197,9 @@ and `jj log` to manage changes. Existing Git history and remotes are preserved.
 
 ## Support development
 
-If you find Amado useful, you can [buy me a coffee](https://buymeacoffee.com/pangmo5) to support its development.
+If you find Amado useful, you can support its development with a coffee.
+
+<a href="https://buymeacoffee.com/pangmo5"><img src="https://pangmo5.dev/buy-me-a-coffee.png" alt="Support development on Buy Me a Coffee" width="144"></a>
 
 ## License
 
